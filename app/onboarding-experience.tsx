@@ -15,6 +15,7 @@ import {
 
 import { motion } from 'motion/react';
 import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
+import { LocationMap } from '@/components/bklit/location-map';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -260,6 +261,7 @@ function ProfileForm({ profile, tickersText, busy, saved, message, onProfileChan
         <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">Give us the basics. You can change these preferences anytime.</p>
       </div>
       <form onSubmit={onSubmit} className="space-y-7" noValidate>
+        <LocationMap country={profile.country} disabled={busy} onSelect={(country) => onProfileChange({ ...profile, country })} />
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2.5">
             <Label htmlFor="city">Your city</Label>

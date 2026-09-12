@@ -4,7 +4,7 @@ import type { ListenerProfile } from './preferences';
 
 export type NewsCategory = 'Interests' | 'Sports' | 'Markets' | 'Places' | 'Following';
 export type NewsQuery = { category: NewsCategory; terms: string[]; query: string };
-export type NewsStory = { title: string; url: string; source: string; publishedAt: string; category: NewsCategory; reasons: string[]; coverageSources?: number };
+export type NewsStory = { title: string; url: string; source: string; publishedAt: string; category: NewsCategory; reasons: string[]; coverageSources?: number; imageUrl?: string | null; imageCheckedAt?: string; imageVersion?: number };
 export type NewsFeed = { stories: NewsStory[]; fetchedAt: string; cached: boolean; warning?: string };
 
 const stockNames: Record<string, string> = { AAPL: 'Apple', NVDA: 'Nvidia', MSFT: 'Microsoft', AMZN: 'Amazon', TSLA: 'Tesla', GOOGL: 'Google', GOOG: 'Google', META: 'Meta', 'BRK.B': 'Berkshire Hathaway' };
