@@ -58,3 +58,20 @@ test('provider outage is an error, not fake or empty news', async () => {
   try { await assert.rejects(fetchNews({ ...EMPTY_PROFILE, city: 'Pittsburgh', topics: ['Science'] }), /unavailable/); }
   finally { globalThis.fetch = original; }
 });
+
+test('a stalled response-body cancellation cannot hang the feed', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    body: { getReader: () => ({
+      read: async () => ({ done: true }),
+      cancel: () => new Promise(() => {}),
+    }) },
+  });
+  try {
+    await assert.rejects(Promise.race([
+      fetchNews({ ...EMPTY_PROFILE, city: 'Pittsburgh' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Feed hung during cancellation.')), 100)),
+    ]), /unavailable/);
+  } finally { globalThis.fetch = original; }
+});

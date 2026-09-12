@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Brain, LoaderCircle, RefreshCw, SlidersHorizontal, ThumbsUp, ThumbsDown, Undo2 } from 'lucide-react';
+import { ArrowUpRight, Brain, Clock3, FileText, LoaderCircle, RefreshCw, SlidersHorizontal, ThumbsUp, ThumbsDown, Undo2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
 import { FeedbackGauge } from '@/components/bklit/feedback-gauge';
 import { Button } from '@/components/ui/button';
 import type { LearnedFeed, FeedbackValue } from '@/lib/feed-learning';
+import type { BriefingMinutes } from '@/lib/briefing';
 
 export default function FeedPage() {
   const [feed, setFeed] = useState<LearnedFeed | null>(null);
@@ -18,6 +19,16 @@ export default function FeedPage() {
   const [error, setError] = useState('');
   const [needsProfile, setNeedsProfile] = useState(false);
   const [category, setCategory] = useState('All');
+  const [briefingMinutes, setBriefingMinutes] = useState<BriefingMinutes>(10);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const summariesRef = useRef<Record<string, string>>({});
+  const [summariesLoading, setSummariesLoading] = useState(false);
+  const [summaryRequests, setSummaryRequests] = useState<Record<string, boolean>>({});
+  const [summaryError, setSummaryError] = useState('');
+  const [transcript, setTranscript] = useState<{ text: string; storiesIncluded: number; totalAvailable: number; cached: boolean } | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [transcriptError, setTranscriptError] = useState('');
   async function teach(action: FeedbackValue | 'clear' | 'reset', url?: string) {
     if (actionInFlight.current || busy) return;
     actionInFlight.current = true;
@@ -39,7 +50,10 @@ export default function FeedPage() {
   }
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch('/api/news', { cache: 'no-store', signal });
+      const requestSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(40_000)])
+        : AbortSignal.timeout(40_000);
+      const response = await fetch('/api/news', { cache: 'no-store', signal: requestSignal });
       const data = await response.json();
       if (!response.ok) {
         if (response.status === 401 || response.status === 409) { setNeedsProfile(true); setFeed(null); }
@@ -47,7 +61,9 @@ export default function FeedPage() {
       }
       setFeed(data); setCategory('All');
     } catch (cause) {
-      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : 'Could not load your feed.');
+      if (!signal?.aborted) setError(cause instanceof DOMException && cause.name === 'TimeoutError'
+        ? 'News loading timed out. Press Refresh to try again.'
+        : cause instanceof Error ? cause.message : 'Could not load your feed.');
     } finally { if (!signal?.aborted) setBusy(false); }
   }, []);
   // load only updates state after the network response; abort protects unmounts.
@@ -55,17 +71,92 @@ export default function FeedPage() {
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
   const categories = ['All', ...new Set(feed?.stories.map((story) => story.category) || [])];
   const stories = feed?.stories.filter((story) => category === 'All' || story.category === category) || [];
+  const transcriptStoryLimit = { 5: 8, 10: 18, 20: 40 }[briefingMinutes];
+  const transcriptReady = Boolean(feed?.stories.slice(0, transcriptStoryLimit).every((story) => summaries[story.url]));
+
+  // Generate only the top eight automatically. Remaining stories are opt-in.
+  // oxlint-disable-next-line react/react-compiler
+  useEffect(() => {
+    if (!feed?.stories.length) return;
+    const controller = new AbortController();
+    async function generate() {
+      const missing = feed!.stories.slice(0, 8).filter((story) => !summariesRef.current[story.url]);
+      if (!missing.length) return;
+      setSummariesLoading(true); setSummaryError('');
+      const batches = Array.from({ length: Math.ceil(missing.length / 8) }, (_, index) => missing.slice(index * 8, index * 8 + 8));
+      try {
+        for (let index = 0; index < batches.length; index += 2) {
+          await Promise.all(batches.slice(index, index + 2).map(async (batch) => {
+            const response = await fetch('/api/news/summaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: batch.map((story) => story.url) }), signal: controller.signal });
+            const data = await response.json() as { summaries?: { url: string; summary: string }[]; error?: string };
+            if (!response.ok || !data.summaries) throw new Error(data.error || 'Could not generate Gemini summaries.');
+            setSummaries((current) => {
+              const next = { ...current, ...Object.fromEntries(data.summaries!.map((item) => [item.url, item.summary])) };
+              summariesRef.current = next;
+              return next;
+            });
+          }));
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted) setSummaryError(cause instanceof Error ? cause.message : 'Could not generate Gemini summaries.');
+      } finally { if (!controller.signal.aborted) setSummariesLoading(false); }
+    }
+    void generate();
+    return () => controller.abort();
+  }, [feed]);
+
+  async function generateOneSummary(url: string) {
+    if (summaryRequests[url] || summaries[url]) return;
+    setSummaryRequests((current) => ({ ...current, [url]: true })); setSummaryError('');
+    try {
+      const response = await fetch('/api/news/summaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: [url] }) });
+      const data = await response.json() as { summaries?: { url: string; summary: string }[]; error?: string };
+      if (!response.ok || !data.summaries?.[0]) throw new Error(data.error || 'Could not generate this Gemini summary.');
+      setSummaries((current) => {
+        const next = { ...current, [url]: data.summaries![0].summary };
+        summariesRef.current = next;
+        return next;
+      });
+    } catch (cause) { setSummaryError(cause instanceof Error ? cause.message : 'Could not generate this Gemini summary.'); }
+    finally { setSummaryRequests((current) => ({ ...current, [url]: false })); }
+  }
+
+  async function viewTranscript() {
+    setShowTranscript(true); setTranscriptLoading(true); setTranscriptError(''); setTranscript(null);
+    try {
+      const response = await fetch('/api/news/transcript', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: briefingMinutes }) });
+      const data = await response.json() as { text?: string; storiesIncluded?: number; totalAvailable?: number; cached?: boolean; error?: string };
+      if (!response.ok || !data.text || typeof data.storiesIncluded !== 'number' || typeof data.totalAvailable !== 'number') throw new Error(data.error || 'Could not generate your transcript.');
+      setTranscript({ text: data.text, storiesIncluded: data.storiesIncluded, totalAvailable: data.totalAvailable, cached: Boolean(data.cached) });
+    } catch (cause) { setTranscriptError(cause instanceof Error ? cause.message : 'Could not generate your transcript.'); }
+    finally { setTranscriptLoading(false); }
+  }
 
   return <FlowShell>
     <header className="flow-nav" id="top"><Brand /><span className="nav-note">YOUR WORLD. YOUR WAVELENGTH.</span><Link href="/" className="nav-link"><SlidersHorizontal size={15} />Tune your feed</Link></header>
     <div className="flow-container"><FlowHero feed />
+      <section className="briefing-builder" aria-labelledby="briefing-title">
+        <div className="briefing-builder-copy"><span className="eyebrow"><Clock3 size={14} />DAILY BRIEFING</span><h2 id="briefing-title">HOW MUCH TIME DO YOU HAVE?</h2><p>Choose a full-length rundown at about 150 spoken words per minute, then preview the transcript. Audio comes next.</p></div>
+        <div className="briefing-actions">
+          <fieldset className="duration-picker"><legend className="sr-only">Briefing length</legend>{([5, 10, 20] as const).map((minutes) => <button key={minutes} type="button" aria-pressed={briefingMinutes === minutes} className={briefingMinutes === minutes ? 'active' : ''} onClick={() => { setBriefingMinutes(minutes); setShowTranscript(false); setTranscript(null); setTranscriptError(''); }}><strong>{minutes}</strong><span>MIN</span></button>)}</fieldset>
+          <Button onClick={() => void viewTranscript()} disabled={!feed?.stories.length || transcriptLoading || (!transcriptReady && summariesLoading)}><FileText className="size-4" aria-hidden="true" />{transcriptLoading ? 'Writing with Gemini…' : !transcriptReady && summariesLoading ? 'Preparing summaries…' : 'View transcript'}</Button>
+        </div>
+      </section>
+      {showTranscript && feed && <section id="briefing-transcript" className="transcript-panel" aria-labelledby="transcript-title">
+        <div className="transcript-heading"><div><span className="eyebrow">GEMINI TRANSCRIPT</span><h2 id="transcript-title">YOUR {briefingMinutes}-MINUTE BRIEF</h2><p>{transcript ? `${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved transcript' : ''}.` : 'Researching and writing your personalized rundown.'}</p></div><Button variant="ghost" size="icon" onClick={() => setShowTranscript(false)} aria-label="Close transcript"><X aria-hidden="true" /></Button></div>
+        {transcriptLoading && <output className="flex items-center gap-3 py-10"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gemini is writing your transcript. Longer briefings can take about a minute.</output>}
+        {transcriptError && <p role="alert" className="py-8 font-medium">{transcriptError}</p>}
+        {transcript && <div className="transcript-copy">{transcript.text.split(/\n{2,}/).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 20)}`}>{paragraph}</p>)}</div>}
+        <p className="transcript-note">Generated by Gemini from your current news summaries. Check the linked publisher articles for complete context. Audio is not connected yet.</p>
+      </section>}
       <div className="feed-toolbar">
         <div><h2 className="text-xl font-semibold">For you</h2><p className="mt-1 text-sm text-muted-foreground">{feed ? `${feed.stories.length} stories · Updated ${new Date(feed.fetchedAt).toLocaleString()}${feed.cached ? ' · Saved feed' : ''}` : 'Finding recent stories across your preferences'}</p></div>
         <Button variant="outline" disabled={busy || teaching} onClick={() => { setBusy(true); setError(''); setLesson(''); setNeedsProfile(false); void load(); }}><RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />{busy ? 'Finding stories' : 'Refresh'}</Button>
       </div>
       {error && <div role="alert" className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">{error}{needsProfile && <Link href="/" className="ml-2 font-semibold underline">Go to account & preferences</Link>}</div>}
       {feed?.warning && <output className="mb-5 block rounded-xl border border-border bg-muted p-4 text-sm">{feed.warning}</output>}
-      {busy && !feed && <output className="flex items-center gap-3 py-16 text-muted-foreground"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gathering your headlines. This can take up to 20 seconds.</output>}
+      {summaryError && <p role="alert" className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">{summaryError}</p>}
+      {busy && !feed && <output className="flex items-center gap-3 py-16 text-muted-foreground"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gathering your headlines. This can take up to 35 seconds.</output>}
       {feed && <>
         <section aria-labelledby="teach-title" className="learning-panel"><FeedbackGauge count={feed.learning?.count || 0} /><div className="learning-copy">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -85,6 +176,7 @@ export default function FeedPage() {
         <div className="story-grid">{stories.map((story, index) => <motion.article layout="position" initial={{ opacity: 1, y: 12 }} animate={{ opacity: 1, y: 0 }} key={story.url} className="story-card">
           <div className="flex items-center justify-between gap-3 text-xs"><span className="story-number">{String(index + 1).padStart(2, '0')}</span><span className="rounded-full bg-secondary px-2.5 py-1 font-medium text-secondary-foreground">{story.category}</span><time dateTime={story.publishedAt} className="text-muted-foreground">{new Date(story.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
           <h3 className="mb-5 mt-4 text-xl font-semibold leading-snug tracking-tight"><a href={story.url} target="_blank" rel="noopener noreferrer" className="hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">{story.title}<ArrowUpRight className="ml-1 inline size-4" aria-label="Opens in a new tab" /></a></h3>
+          <div className="story-summary"><span>GEMINI DEEP SUMMARY</span>{summaries[story.url] ? <p>{summaries[story.url]}</p> : summaryRequests[story.url] || (summariesLoading && feed.stories.slice(0, 8).some((item) => item.url === story.url)) ? <p className="flex items-center gap-2"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />Researching this story…</p> : <Button type="button" size="sm" variant="outline" onClick={() => void generateOneSummary(story.url)}>Generate summary</Button>}</div>
           <div className="mt-auto"><p className="text-sm font-medium">{story.source}</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Why this story: {story.reasons.slice(0, 3).join(' · ')}</p></div>
           <fieldset className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4" aria-label={`Feedback on ${story.title}`}>
             <Button size="sm" variant={feed.learning?.selections.some((item) => item.url === story.url && item.value === 'more') ? 'default' : 'outline'} aria-pressed={feed.learning?.selections.some((item) => item.url === story.url && item.value === 'more') || false} disabled={busy || teaching} onClick={() => void teach('more', story.url)}><ThumbsUp className="size-3.5" aria-hidden="true" />More like this</Button>
