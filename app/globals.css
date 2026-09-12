@@ -74,7 +74,6 @@
 .flow-container,.flow-nav,.flow-footer { width: min(1320px,calc(100% - 96px)); margin-inline: auto; }
 .flow-nav { display:flex; align-items:center; justify-content:space-between; gap:24px; height:110px; border-bottom:1px solid #ffffff45; }
 .wordmark { font-family: Anton,Impact,sans-serif; font-size:40px; letter-spacing:-1.8px; line-height:1; text-decoration:none; }
-.wordmark span { font-family:Arial,sans-serif; font-size:12px; vertical-align:top; margin-left:4px; letter-spacing:0; }
 .nav-note,.eyebrow,.section-rule,.preview-topline,.flow-footer>span:not(.wordmark) { font-size:10px; font-weight:700; letter-spacing:2px; line-height:1.6; }
 .nav-link { display:flex; align-items:center; gap:18px; font-size:12px; font-weight:700; padding:12px 0; text-transform:uppercase; letter-spacing:1px; }
 .flow-hero { position:relative; padding:66px 0 52px; }
@@ -125,3 +124,13 @@
 
 /* Keep artwork subordinate to controls, with ample touch targets. */
 @media(max-width:800px) { .flow-paths { height:620px; opacity:.08; } .account-surface button { min-height:36px; } .flow-hero { padding-bottom:36px; } }
+
+.story-rating { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:20px; padding-top:16px; border:0; border-top:1px solid var(--border); min-width:0; }
+.rating-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-right:auto; }
+.rating-stars { display:flex; gap:1px; }
+.rating-star { display:grid; place-items:center; width:36px; height:40px; border-radius:10px; cursor:pointer; transition:background .15s,transform .15s; }
+.rating-star:hover { background:#ffffff24; transform:translateY(-2px); }
+.rating-star:focus-visible,.rating-clear:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.story-rating:disabled .rating-star,.story-rating:disabled .rating-clear { cursor:wait; opacity:.6; }
+.rating-clear { font-size:11px; min-height:40px; padding:0 8px; text-decoration:underline; cursor:pointer; }
+@media(prefers-reduced-motion:reduce) { .rating-star { transition:none; }.rating-star:hover { transform:none; } }

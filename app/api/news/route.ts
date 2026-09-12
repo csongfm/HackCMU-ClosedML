@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionUser } from '@/lib/session';
 import { getDatabase } from '@/lib/mongodb';
 import { normalizeProfile } from '@/lib/preferences';
-import { fetchNews, type NewsFeed } from '@/lib/news';
-import { rankFeed } from '@/lib/feed-learning';
+import { fetchNews, type NewsStory, type NewsFeed } from '@/lib/news';
+import { discoveryKeywords, rankFeed, ratingsFor, refreshDue, withCoverage } from '@/lib/feed-learning';
 import { readFeedback } from '@/lib/feed-learning-store';
 
 export const runtime = 'nodejs';
@@ -22,6 +22,7 @@ async function withNewsDeadline<T>(task: Promise<T>, milliseconds = 35_000): Pro
 }
 
 export async function GET(request: NextRequest) {
+  const startedAt = new Date().toISOString();
   const user = await getSessionUser(request);
   if (!user) return reply({ error: 'Sign in to see your news.' }, 401);
   try {
