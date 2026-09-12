@@ -16,14 +16,16 @@ Briefly turns a listener's location, interests, teams, and stock watchlist into 
 - Existing single-team profiles automatically load into the new team list
 - Personalized `/feed` with real Google News RSS headlines, source links, category filters, and selection explanations
 - Authenticated news API with a 15-minute, profile-aware MongoDB cache (one feed document per account)
+- Gemini-generated 80-120 word summaries on every story and selectable 5, 10, or 20-minute transcript previews paced at about 150 spoken words per minute
 
 ## Setup
 
 1. Copy `.env.example` to `.env.local`.
 2. Add a MongoDB Atlas connection string.
 3. Generate an `AUTH_SECRET` with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` and put it in `.env.local`. Keep an existing generated secret.
-4. Add your ElevenLabs API key and voice ID.
-5. Run `npm run dev`.
+4. Add `GEMINI_API_KEY` from Google AI Studio. `GEMINI_MODEL` defaults to `gemini-flash-latest`.
+5. Add your ElevenLabs API key and voice ID.
+6. Run `npm run dev`.
 
 The ElevenLabs endpoint accepts one script section at a time at `POST /api/voice`. The news pipeline should generate and synthesize sections separately, then assemble or play them as briefing chapters.
 
@@ -31,7 +33,7 @@ Run `npm test` for preference validation checks. The browser and profile API sha
 
 ## Personalized news
 
-Save your preferences to open `/feed`, or use **My feed** from onboarding. No extra news API key is needed. The server sends interest/place/watchlist search terms (not account details) to Google News RSS. Headlines are English-language, from the last 72 hours; searches and category balancing are heuristic. Exclusions match headline text only. News source outages show an error or a clearly labeled saved feed from the same preferences. Audio script generation and playback are not implemented yet.
+Save your preferences to open `/feed`, or use **My feed** from onboarding. Discovery uses Google News RSS without a news API key. The server sends interest/place/watchlist search terms—not account details—to Google News RSS. Headlines are English-language and from the last 72 hours; searches and category balancing are heuristic. Gemini generates summaries in batches of eight and personalized transcripts; both are cached in MongoDB to reduce cost and latency. Summary cache IDs include a prompt version, so changing the summary format refreshes old short entries without deleting user data. Set `GEMINI_USE_GOOGLE_SEARCH=true` only when the Google project has Search grounding quota. Audio generation and playback are not connected to the feed yet.
 
 Run `npm.cmd test` for preference and news-pipeline tests, and `npm.cmd run build` to verify production compilation.
 

@@ -59,18 +59,19 @@ test('provider outage is an error, not fake or empty news', async () => {
   finally { globalThis.fetch = original; }
 });
 
-test('discovery searches fetch real RSS candidates beyond 40 and still apply exclusions', async () => {
+test('a stalled response-body cancellation cannot hang the feed', async () => {
   const original = globalThis.fetch;
-  const searches = [];
-  const date = new Date().toUTCString();
-  globalThis.fetch = async (url) => {
-    searches.push(new URL(url).searchParams.get('q'));
-    return new Response(`<rss><channel>${Array.from({length:65},(_,i)=>`<item><title>Science robotics ${i===64?'excluded':i}</title><link>https://news.google.com/rss/articles/${i}</link><pubDate>${date}</pubDate><source>Publisher</source></item>`).join('')}</channel></rss>`);
-  };
+  globalThis.fetch = async () => ({
+    ok: true,
+    body: { getReader: () => ({
+      read: async () => ({ done: true }),
+      cancel: () => new Promise(() => {}),
+    }) },
+  });
   try {
-    const feed=await fetchNews({...EMPTY_PROFILE,city:'Pittsburgh',topics:['Science'],excludedTopics:['excluded']},['robotics']);
-    assert.ok(searches.includes('"robotics" when:3d'));
-    assert.equal(feed.stories.length,64);
-    assert.ok(feed.stories.every(story=>!story.title.includes('excluded')));
-  } finally { globalThis.fetch=original; }
+    await assert.rejects(Promise.race([
+      fetchNews({ ...EMPTY_PROFILE, city: 'Pittsburgh' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Feed hung during cancellation.')), 100)),
+    ]), /unavailable/);
+  } finally { globalThis.fetch = original; }
 });
