@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, LoaderCircle, RefreshCw, SlidersHorizontal, Star } from 'lucide-react';
+import { ArrowUpRight, Clock3, FileText, LoaderCircle, RefreshCw, SlidersHorizontal, Star, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
 import { Button } from '@/components/ui/button';
 import type { LearnedFeed, StarRating } from '@/lib/feed-learning';
+import type { BriefingMinutes } from '@/lib/briefing';
 
 export default function FeedPage() {
   const [feed, setFeed] = useState<LearnedFeed | null>(null);
@@ -26,7 +27,7 @@ export default function FeedPage() {
   const [transcript, setTranscript] = useState<{ text: string; storiesIncluded: number; totalAvailable: number; cached: boolean } | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState('');
-  async function teach(action: FeedbackValue | 'clear' | 'reset', url?: string) {
+  async function rate(url: string, rating?: StarRating) {
     if (actionInFlight.current || busy) return;
     actionInFlight.current = true;
     setSavingRating(true); setError('');
