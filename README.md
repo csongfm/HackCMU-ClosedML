@@ -35,6 +35,14 @@ Save your preferences to open `/feed`, or use **My feed** from onboarding. No ex
 
 Run `npm.cmd test` for preference and news-pipeline tests, and `npm.cmd run build` to verify production compilation.
 
+## Teach my feed
+
+Each headline has **More like this**, **Less like this**, and **Undo** controls. Feedback is saved to the signed-in account and the current feed is reranked in the response, without waiting for the RSS cache to expire. **Reset learning** clears the learned history while preserving the saved profile.
+
+The server trains a per-user logistic regression model with stochastic gradient descent on normalized headline-word, category, and publisher features. The latest 200 distinct rated stories are stored in one `feedLearning` MongoDB document per account. Changing a vote replaces that story's training example; Undo removes it. The model is refit from the bounded history, so removed votes leave no residual weights. Atomic updates preserve votes from concurrent tabs. Only stories in the account's current cached feed can be rated; feature data is built server-side.
+
+Learned relevance is blended with a small prior from the original freshness/category ordering. Feedback affects both the current feed and future fetched feeds; retrieval still uses the saved interests and exclusions. This model learns keyword similarity, not full-article semantics, and does not guarantee that each vote changes the visible order. It needs no new API key or ML service. `npm test` includes held-out-headline ranking, negative-feedback, reset, and deterministic-retraining checks.
+
 ## Account setup troubleshooting
 
 The app reads `.env.local`; `.env.example` is only a template. Account creation and sign-in need both `MONGODB_URI` and `AUTH_SECRET`. ElevenLabs credentials are not required for accounts.

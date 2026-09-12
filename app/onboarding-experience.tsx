@@ -1,13 +1,11 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { type SubmitEvent as FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowRight,
   Check,
-  Clock3,
-  Headphones,
   LoaderCircle,
   LogOut,
   MapPin,
@@ -15,6 +13,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+import { motion } from 'motion/react';
+import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +22,6 @@ import { InterestPicker } from './interest-picker';
 import { FollowList } from './follow-list';
 import { EMPTY_PROFILE, FOLLOW_LIMITS, MAX_INTERESTS, MAX_STOCKS, hydrateProfile, normalizeProfile, parseTickers, validateTickers, type ListenerProfile as Profile } from '@/lib/preferences';
 
-const WAVEFORM = [22, 38, 56, 30, 68, 44, 82, 52, 72, 34, 60, 88, 42, 64, 28, 50, 74, 38, 58, 24];
 
 type Account = { id: string; name: string; email: string };
 
@@ -83,6 +82,7 @@ export function OnboardingExperience() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authFields),
+        signal: AbortSignal.timeout(20000),
       });
       const data = (await response.json()) as { user?: Account; error?: string };
       if (!response.ok || !data.user) throw new Error(data.error || 'Unable to continue.');
@@ -92,7 +92,7 @@ export function OnboardingExperience() {
       setSaved(false);
       setAuthFields({ name: '', email: '', password: '' });
       setAccount(data.user);
-      const me = await fetch('/api/auth/me');
+      const me = await fetch('/api/auth/me', { signal: AbortSignal.timeout(15000), cache: 'no-store' });
       if (!me.ok) throw new Error('Signed in, but your saved profile could not be loaded. Refresh to try again.');
       const current = await me.json() as { profile?: Profile };
       if (current.profile) {
@@ -101,7 +101,9 @@ export function OnboardingExperience() {
         setTickersText(loaded.tickers.join(', '));
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to continue.');
+      setMessage(error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+        ? 'The request timed out. If you were creating an account, try signing in before submitting again. Otherwise, check the database connection and retry.'
+        : error instanceof Error ? error.message : 'Unable to continue.');
     } finally {
       setBusy(false);
     }
@@ -164,75 +166,25 @@ export function OnboardingExperience() {
     });
   }
 
-  return (
-    <main className="min-h-screen overflow-hidden bg-background text-foreground">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_82%_14%,oklch(0.78_0.13_185/0.18),transparent_31%),radial-gradient(circle_at_8%_90%,oklch(0.75_0.16_55/0.10),transparent_27%)]" />
-
-      <header className="relative mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
-        <div className="flex items-center gap-2.5" aria-label="Briefly">
-          <span className="grid size-9 place-items-center rounded-full bg-primary text-primary-foreground">
-            <Radio className="size-4" aria-hidden="true" />
-          </span>
-          <span className="text-lg font-semibold tracking-[-0.03em]">Briefly</span>
-        </div>
-        {account ? (
-          <div className="flex items-center gap-2">
-          <Link href="/feed" className="rounded-lg px-3 py-2 text-sm font-medium text-primary">My feed</Link>
-          <Button variant="ghost" onClick={signOut} className="gap-2 text-muted-foreground">
-            <span className="hidden sm:inline">{account.email}</span>
-            <LogOut className="size-4" aria-hidden="true" />
-            Sign out
-          </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock3 className="size-4" aria-hidden="true" />
-            <span>10 minutes. Just for you.</span>
-          </div>
-        )}
-      </header>
-
-      <div className="relative mx-auto grid w-full max-w-7xl gap-10 px-5 pb-12 pt-5 sm:px-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:items-center lg:gap-16 lg:px-10 lg:pb-16 lg:pt-8">
-        <section className="max-w-2xl">
-          {checkingSession ? (
-            <div className="flex min-h-[470px] items-center gap-3 text-muted-foreground">
-              <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> Loading your profile…
-            </div>
-          ) : sessionError ? (
-            <div className="space-y-4 py-16">
-              <h1 className="text-2xl font-semibold">Your profile couldn't load</h1>
-              <p role="alert" className="text-muted-foreground">{sessionError}</p>
-              <Button onClick={() => { setSessionError(''); setCheckingSession(true); setSessionAttempt((attempt) => attempt + 1); }}>Retry loading profile</Button>
-            </div>
-          ) : account ? (
-            <ProfileForm
-              profile={profile}
-              tickersText={tickersText}
-              busy={busy}
-              saved={saved}
-              message={message}
-              onProfileChange={(value) => { setSaved(false); setMessage(''); setProfile(value); }}
-              onTickersChange={(value) => { setSaved(false); setMessage(''); setTickersText(value); }}
-              onToggleTopic={toggleTopic}
-              onSubmit={saveProfile}
-            />
-          ) : (
-            <AccountForm
-              mode={authMode}
-              fields={authFields}
-              busy={busy}
-              message={message}
-              onModeChange={(mode) => { setAuthMode(mode); setMessage(''); }}
-              onFieldsChange={setAuthFields}
-              onSubmit={submitAccount}
-            />
-          )}
-        </section>
-
+  return <FlowShell>
+    <header className="flow-nav" id="top"><Brand /><span className="nav-note">YOUR DAILY DOSE OF WHAT MATTERS</span>
+      {account ? <div className="flex items-center gap-3"><Link className="nav-link" href="/feed">My feed <ArrowRight size={15} /></Link><Button variant="ghost" onClick={signOut} aria-label="Sign out"><LogOut size={16} /><span className="hidden sm:inline">Sign out</span></Button></div> : <a className="nav-link" href="#account">Tune in <ArrowRight size={15} /></a>}
+    </header>
+    <div className="flow-container"><FlowHero />
+      <div className="section-rule"><span>01 / {account ? 'MAKE IT PERSONAL' : 'FIND YOUR FREQUENCY'}</span><span>NEWS THAT GETS YOU</span></div>
+      <div className="onboarding-grid">
+        <motion.section id="account" className="account-surface" initial={{ opacity: 1, y: 15 }} animate={{ opacity: 1, y: 0 }}>
+          {checkingSession ? <output className="flex min-h-60 items-center gap-3"><LoaderCircle className="size-5 animate-spin" />Loading your profile...</output>
+          : sessionError ? <div className="space-y-4"><h2 className="display-small">LET&apos;S RECONNECT.</h2><p role="alert">{sessionError}</p><Button onClick={() => { setSessionError(''); setCheckingSession(true); setSessionAttempt((attempt) => attempt + 1); }}>Retry loading profile</Button></div>
+          : account ? <ProfileForm profile={profile} tickersText={tickersText} busy={busy} saved={saved} message={message}
+            onProfileChange={(value) => { setSaved(false); setMessage(''); setProfile(value); }}
+            onTickersChange={(value) => { setSaved(false); setMessage(''); setTickersText(value); }} onToggleTopic={toggleTopic} onSubmit={saveProfile} />
+          : <AccountForm mode={authMode} fields={authFields} busy={busy} message={message} onModeChange={(mode) => { setAuthMode(mode); setMessage(''); }} onFieldsChange={setAuthFields} onSubmit={submitAccount} />}
+        </motion.section>
         <BriefingPreview profile={profile} tickers={displayTickers} />
       </div>
-    </main>
-  );
+    </div>
+  </FlowShell>;
 }
 
 function AccountForm({ mode, fields, busy, message, onModeChange, onFieldsChange, onSubmit }: {
@@ -246,18 +198,7 @@ function AccountForm({ mode, fields, busy, message, onModeChange, onFieldsChange
 }) {
   return (
     <>
-      <div className="mb-8">
-        <div className="mb-5 flex items-center gap-2 text-sm font-medium text-primary">
-          <Sparkles className="size-4" aria-hidden="true" /> Your signal, not the noise
-        </div>
-        <h1 className="max-w-xl text-4xl font-semibold leading-[1.05] tracking-[-0.055em] sm:text-5xl lg:text-[3.6rem]">
-          Your news. One focused listen.
-        </h1>
-        <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-          Create an account, tell us what matters, and get a personal audio rundown for your commute.
-        </p>
-      </div>
-
+      <div className="mb-7"><p className="eyebrow">YOUR NEXT GOOD HABIT</p><h2 className="display-small mt-3">{mode === 'register' ? 'COME ON IN.' : 'WELCOME BACK.'}</h2><p className="mt-3 text-sm leading-6">A few favorites. A fresh perspective. A feed that feels like you.</p></div>
       <div className="mb-6 flex w-fit rounded-xl bg-muted p-1" role="tablist" aria-label="Account action">
         {(['register', 'login'] as const).map((item) => (
           <Button
@@ -315,7 +256,7 @@ function ProfileForm({ profile, tickersText, busy, saved, message, onProfileChan
     <>
       <div className="mb-8">
         <div className="mb-5 flex items-center gap-2 text-sm font-medium text-primary"><Sparkles className="size-4" aria-hidden="true" /> Your signal, not the noise</div>
-        <h1 className="max-w-xl text-4xl font-semibold leading-[1.05] tracking-[-0.055em] sm:text-5xl lg:text-[3.6rem]">What should make your briefing?</h1>
+        <h2 className="display-small">SET YOUR FREQUENCY.</h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">Give us the basics. You can change these preferences anytime.</p>
       </div>
       <form onSubmit={onSubmit} className="space-y-7" noValidate>
@@ -369,34 +310,11 @@ function ProfileForm({ profile, tickersText, busy, saved, message, onProfileChan
 }
 
 function BriefingPreview({ profile, tickers }: { profile: Profile; tickers: string[] }) {
-  return (
-    <aside className="mx-auto w-full max-w-lg lg:mx-0" aria-label="Briefing preview">
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#071a1f] p-5 text-white shadow-[0_28px_80px_oklch(0.2_0.04_205/0.24)] sm:p-7">
-        <div className="absolute right-0 top-0 size-52 translate-x-1/3 -translate-y-1/3 rounded-full bg-teal-300/20 blur-3xl" />
-        <div className="relative">
-          <div className="flex items-start justify-between gap-4">
-            <div><p className="text-sm text-white/55">Tomorrow morning</p><h2 className="mt-1 text-xl font-medium tracking-tight">Your Daily Briefing</h2></div>
-            <span className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/80"><Headphones className="size-3.5" aria-hidden="true" /> 10:00</span>
-          </div>
-          <div className="my-9 flex h-24 items-center justify-center gap-1" aria-hidden="true">
-            {WAVEFORM.map((height, index) => <span key={`${height}-${index}`} className="w-1.5 rounded-full bg-teal-300" style={{ height: `${height}%`, opacity: 0.42 + (index % 4) * 0.16 }} />)}
-          </div>
-          <div className="space-y-1.5">
-            <PreviewRow number="01" title={profile.city ? `What’s happening in ${profile.city}` : 'News from your city'} active />
-            <PreviewRow number="02" title={profile.topics.length ? profile.topics.slice(0, 2).join(' + ') : 'Your top interests'} />
-            <PreviewRow number="03" title={profile.teams.length ? profile.teams.join(' + ') : 'Your sports teams'} />
-            <PreviewRow number="04" title={tickers.length ? `Market watch: ${tickers.join(', ')}` : 'Companies you follow'} />
-            {(profile.locations.length > 0 || profile.country) && <PreviewRow number="05" title={[profile.country, ...profile.locations].filter(Boolean).join(' · ')} />}
-            {(profile.companies.length > 0 || profile.people.length > 0) && <PreviewRow number="06" title={[...profile.companies, ...profile.people].join(' · ')} />}
-          </div>
-          {profile.excludedTopics.length > 0 && <p className="mt-4 text-sm text-white/60">Skipping: {profile.excludedTopics.join(', ')}</p>}
-          <div className="mt-7 flex items-center justify-between border-t border-white/10 pt-5 text-xs text-white/50"><span>6 stories · personalized daily</span><span>Voice by ElevenLabs</span></div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function PreviewRow({ number, title, active = false }: { number: string; title: string; active?: boolean }) {
-  return <div className={`flex items-center gap-4 rounded-xl px-3 py-3 ${active ? 'bg-white/10' : ''}`}><span className={`text-xs tabular-nums ${active ? 'text-teal-300' : 'text-white/35'}`}>{number}</span><span className={`min-w-0 flex-1 truncate text-sm ${active ? 'text-white' : 'text-white/68'}`}>{title}</span><span className={`size-1.5 rounded-full ${active ? 'bg-teal-300' : 'bg-white/20'}`} aria-hidden="true" /></div>;
+  const topics = [profile.city || 'YOUR NEIGHBORHOOD', profile.topics[0] || 'YOUR CURIOSITIES', profile.teams[0] || 'YOUR HOME TEAM', tickers.length ? tickers.join(' / ') : 'YOUR WATCHLIST'];
+  return <aside className="frequency-preview" aria-label="Your preferences preview">
+    <div className="preview-topline"><span className="eyebrow">THE WORLD, REMIXED FOR YOU</span><ArrowRight size={20} /></div>
+    <div className="record-art" aria-hidden="true"><div className="record-rings" /><div className="record-center"><Radio size={28}/><span>YOUR<br />DAILY<br />SIGNAL.</span></div><span className="record-label">BRIEFLY / PERSONAL FREQUENCY / VOL. 01</span></div>
+    <div className="preview-list">{topics.map((topic, index) => <div key={index}><span>0{index+1}</span><strong>{topic}</strong><ArrowRight size={14}/></div>)}</div>
+    <p className="preview-note">Built around your interests. Fine-tuned by your feedback.<br />Audio briefings are on the horizon.</p>
+  </aside>;
 }

@@ -1,3 +1,4 @@
+import { connectionDeadline, DatabaseConnectionError } from './connection-deadline';
 import { MongoClient, ServerApiVersion, type Db } from 'mongodb';
 
 declare global {
@@ -19,11 +20,13 @@ function createClient(): MongoClient {
 export async function getDatabase(): Promise<Db> {
   if (!global.brieflyMongoClientPromise) {
     const client = createClient();
-    global.brieflyMongoClientPromise = client.connect().catch(async (error) => {
-      global.brieflyMongoClientPromise = undefined;
-      await client.close().catch(() => {});
-      throw error;
+    const pending = connectionDeadline(client.connect()).catch((error) => {
+      if (global.brieflyMongoClientPromise === pending) global.brieflyMongoClientPromise = undefined;
+      // Do not let closing a stalled DNS lookup delay the error response.
+      void client.close().catch(() => {});
+      throw error instanceof DatabaseConnectionError ? error : new DatabaseConnectionError(error);
     });
+    global.brieflyMongoClientPromise = pending;
   }
 
   const client = await global.brieflyMongoClientPromise;

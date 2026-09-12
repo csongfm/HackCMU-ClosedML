@@ -4,6 +4,8 @@ import { getSessionUser } from '@/lib/session';
 import { getDatabase } from '@/lib/mongodb';
 import { normalizeProfile } from '@/lib/preferences';
 import { fetchNews, type NewsFeed } from '@/lib/news';
+import { rankFeed } from '@/lib/feed-learning';
+import { readFeedback } from '@/lib/feed-learning-store';
 
 export const runtime = 'nodejs';
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
@@ -13,6 +15,7 @@ export async function GET(request: NextRequest) {
   if (!user) return reply({ error: 'Sign in to see your news.' }, 401);
   try {
     const db = await getDatabase();
+    const examples = await readFeedback(db, user.id);
     const saved = await db.collection('profiles').findOne({ userId: user.id });
     if (!saved) return reply({ error: 'Save your interests first so we can build your feed.' }, 409);
     const profile = normalizeProfile(saved);
@@ -21,13 +24,13 @@ export async function GET(request: NextRequest) {
     const feeds = db.collection<{ _id: string; profileHash: string; feed: NewsFeed }>('newsFeeds');
     const cached = await feeds.findOne({ _id: user.id, profileHash });
     const age = cached ? Date.now() - Date.parse(cached.feed.fetchedAt) : Infinity;
-    if (cached && age < 15 * 60_000) return reply({ ...cached.feed, cached: true });
+    if (cached && age < 15 * 60_000) return reply(rankFeed({ ...cached.feed, cached: true }, examples));
     try {
       const feed = await fetchNews(profile);
       await feeds.updateOne({ _id: user.id }, { $set: { profileHash, feed } }, { upsert: true });
-      return reply(feed);
+      return reply(rankFeed(feed, examples));
     } catch {
-      if (cached && age < 24 * 3600_000) return reply({ ...cached.feed, cached: true, warning: 'News sources are unavailable. Showing your previously saved feed; check the update time.' });
+      if (cached && age < 24 * 3600_000) return reply(rankFeed({ ...cached.feed, cached: true, warning: 'News sources are unavailable. Showing your previously saved feed; check the update time.' }, examples));
       return reply({ error: 'News sources are unavailable right now. Please try again shortly.' }, 503);
     }
   } catch {

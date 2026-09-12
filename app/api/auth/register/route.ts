@@ -1,3 +1,4 @@
+import { DatabaseConnectionError, databaseConnectionMessage } from '@/lib/connection-deadline';
 import { hash } from 'bcryptjs';
 import { MongoServerError } from 'mongodb';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
     attachSessionCookie(response, await createSessionToken(user));
     return response;
   } catch (error) {
+    if (error instanceof DatabaseConnectionError) {
+      return NextResponse.json({ error: databaseConnectionMessage() }, { status: 503 });
+    }
     if (error instanceof AccountConfigurationError) {
       return NextResponse.json({ error: accountConfigurationMessage(error) }, { status: 503 });
     }
