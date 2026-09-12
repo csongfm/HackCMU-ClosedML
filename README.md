@@ -57,3 +57,13 @@ Tests cover pair labels and gaps, held-out headline preferences, feature-weight 
 The app reads `.env.local`; `.env.example` is only a template. Account creation and sign-in need both `MONGODB_URI` and `AUTH_SECRET`. ElevenLabs credentials are not required for accounts.
 
 If the development screen asks for `MONGODB_URI`, paste your complete MongoDB connection string into `.env.local`, then restart with `npm.cmd run dev` in PowerShell. Do not overwrite an already configured `.env.local` by copying the example again.
+
+## Story images
+
+Each card reserves a 16:9 image area. Visible cards request images through the authenticated `/api/news/image` endpoint, with at most four client lookups at once. The server searches Bing News using the public headline and accepts only a thumbnail with a close headline match (at least 85% coverage of significant headline words, with matching numbers); publisher icons and unrelated images are rejected. No identity or ratings are sent. Google News article metadata was tested and returned a generic logo, so it is not used as a story photo.
+
+Lookups have a six-second provider deadline, a two-megabyte response limit, no redirects, and fixed search/image hosts. Hits are cached in the account's bounded saved feed. Misses expire after five minutes; failures cached by the first implementation retry immediately. Pictures load directly from Bing without a referrer. Missing matches and broken images show a locally stored Unsplash topic photograph labeled "Illustrative photo"; the publisher's own photograph cannot be guaranteed. See public/images/news/CREDITS.md for sources and licensing. Search markup can change, in which case the fallback remains available. No new API key is needed.
+
+## Home location map
+
+The location form integrates Bklit's choropleth stat-card layout as a country picker. Clicking/tapping a country or selecting it from the accessible list updates the existing Country field; typing a recognized country also highlights it on the map. City stays editable and is never guessed or overwritten by a map click. Save & build my feed persists both through the existing profile endpoint. Zoom/pan/reset affect the map view only. Keyboard users can navigate countries with arrow keys and select with Enter/Space. The map is bundled locally and the city/country fields remain usable if it fails to load. Country aliases such as USA and UK are supported; small countries missing from the coarse map can still be typed manually.
