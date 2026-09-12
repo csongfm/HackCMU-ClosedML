@@ -32,7 +32,7 @@ export function previewImage(html: string, title: string): string | null {
       if (url.origin !== 'https://www.bing.com' || url.username || url.password || url.pathname !== '/th' || !url.searchParams.get('id')?.startsWith('ON')) continue;
       url.searchParams.set('w','720'); url.searchParams.set('h','405');
       return url.href;
-    } catch { /* Missing metadata uses the local fallback. */ }
+    } catch { /* Missing metadata omits the image. */ }
   }
   return null;
 }

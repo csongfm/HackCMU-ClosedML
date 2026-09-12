@@ -2,7 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Clock3, FileText, LoaderCircle, RefreshCw, SlidersHorizontal, Star, X } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import type { InteractiveBrief as Brief } from '@/lib/interactive-brief';
+const InteractiveBrief = dynamic(
+  () => import('@/components/briefly/interactive-brief'),
+);
+import {
+  ArrowUpRight,
+  Clock3,
+  FileText,
+  LoaderCircle,
+  RefreshCw,
+  SlidersHorizontal,
+  Star,
+  X,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
 import { StoryImage } from '@/components/briefly/story-image';
@@ -23,54 +37,105 @@ export default function FeedPage() {
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const summariesRef = useRef<Record<string, string>>({});
   const [summariesLoading, setSummariesLoading] = useState(false);
-  const [summaryRequests, setSummaryRequests] = useState<Record<string, boolean>>({});
+  const [summaryRequests, setSummaryRequests] = useState<
+    Record<string, boolean>
+  >({});
   const [summaryError, setSummaryError] = useState('');
-  const [transcript, setTranscript] = useState<{ text: string; storiesIncluded: number; totalAvailable: number; cached: boolean } | null>(null);
+  const [transcript, setTranscript] = useState<
+    | (Brief & {
+        storiesIncluded: number;
+        totalAvailable: number;
+        cached: boolean;
+      })
+    | null
+  >(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState('');
   async function rate(url: string, rating?: StarRating) {
     if (actionInFlight.current || busy) return;
     actionInFlight.current = true;
-    setSavingRating(true); setError('');
+    setSavingRating(true);
+    setError('');
     try {
       const response = await fetch('/api/news/feedback', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: rating ? 'rate' : 'clear', url, rating }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: rating ? 'rate' : 'clear',
+          url,
+          rating,
+        }),
         signal: AbortSignal.timeout(12000),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not save your rating.');
-      setFeed((current) => current ? { ...current, ratings: data.ratings } : current);
+      if (!response.ok)
+        throw new Error(data.error || 'Could not save your rating.');
+      setFeed((current) =>
+        current ? { ...current, ratings: data.ratings } : current,
+      );
       // Keep cards steady until a completed batch fetches new news.
       if (data.refreshDue) await load();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save your rating.'); }
-    finally { actionInFlight.current = false; setSavingRating(false); }
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'Could not save your rating.',
+      );
+    } finally {
+      actionInFlight.current = false;
+      setSavingRating(false);
+    }
   }
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const requestSignal = signal
         ? AbortSignal.any([signal, AbortSignal.timeout(40_000)])
         : AbortSignal.timeout(40_000);
-      const response = await fetch('/api/news', { cache: 'no-store', signal: requestSignal });
+      const response = await fetch('/api/news', {
+        cache: 'no-store',
+        signal: requestSignal,
+      });
       const data = await response.json();
       if (!response.ok) {
-        if (response.status === 401 || response.status === 409) { setNeedsProfile(true); setFeed(null); }
+        if (response.status === 401 || response.status === 409) {
+          setNeedsProfile(true);
+          setFeed(null);
+        }
         throw new Error(data.error || 'Could not load your feed.');
       }
       setFeed(data);
     } catch (cause) {
-      if (!signal?.aborted) setError(cause instanceof DOMException && cause.name === 'TimeoutError'
-        ? 'News loading timed out. Press Refresh to try again.'
-        : cause instanceof Error ? cause.message : 'Could not load your feed.');
-    } finally { if (!signal?.aborted) setBusy(false); }
+      if (!signal?.aborted)
+        setError(
+          cause instanceof DOMException && cause.name === 'TimeoutError'
+            ? 'News loading timed out. Press Refresh to try again.'
+            : cause instanceof Error
+              ? cause.message
+              : 'Could not load your feed.',
+        );
+    } finally {
+      if (!signal?.aborted) setBusy(false);
+    }
   }, []);
   // load only updates state after the network response; abort protects unmounts.
   // oxlint-disable-next-line react/react-compiler
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
-  const categories = ['All', ...new Set(feed?.stories.map((story) => story.category) || [])];
-  const stories = feed?.stories.filter((story) => category === 'All' || story.category === category) || [];
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+  const categories = [
+    'All',
+    ...new Set(feed?.stories.map((story) => story.category) || []),
+  ];
+  const stories =
+    feed?.stories.filter(
+      (story) => category === 'All' || story.category === category,
+    ) || [];
   const transcriptStoryLimit = { 5: 8, 10: 18, 20: 40 }[briefingMinutes];
-  const transcriptReady = Boolean(feed?.stories.slice(0, transcriptStoryLimit).every((story) => summaries[story.url]));
+  const transcriptReady = Boolean(
+    feed?.stories
+      .slice(0, transcriptStoryLimit)
+      .every((story) => summaries[story.url]),
+  );
 
   // Generate only the top eight automatically. Remaining stories are opt-in.
   // oxlint-disable-next-line react/react-compiler
@@ -78,26 +143,57 @@ export default function FeedPage() {
     if (!feed?.stories.length) return;
     const controller = new AbortController();
     async function generate() {
-      const missing = feed!.stories.slice(0, 8).filter((story) => !summariesRef.current[story.url]);
+      const missing = feed!.stories
+        .slice(0, 8)
+        .filter((story) => !summariesRef.current[story.url]);
       if (!missing.length) return;
-      setSummariesLoading(true); setSummaryError('');
-      const batches = Array.from({ length: Math.ceil(missing.length / 8) }, (_, index) => missing.slice(index * 8, index * 8 + 8));
+      setSummariesLoading(true);
+      setSummaryError('');
+      const batches = Array.from(
+        { length: Math.ceil(missing.length / 8) },
+        (_, index) => missing.slice(index * 8, index * 8 + 8),
+      );
       try {
         for (let index = 0; index < batches.length; index += 2) {
-          await Promise.all(batches.slice(index, index + 2).map(async (batch) => {
-            const response = await fetch('/api/news/summaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: batch.map((story) => story.url) }), signal: controller.signal });
-            const data = await response.json() as { summaries?: { url: string; summary: string }[]; error?: string };
-            if (!response.ok || !data.summaries) throw new Error(data.error || 'Could not generate Gemini summaries.');
-            setSummaries((current) => {
-              const next = { ...current, ...Object.fromEntries(data.summaries!.map((item) => [item.url, item.summary])) };
-              summariesRef.current = next;
-              return next;
-            });
-          }));
+          await Promise.all(
+            batches.slice(index, index + 2).map(async (batch) => {
+              const response = await fetch('/api/news/summaries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: batch.map((story) => story.url) }),
+                signal: controller.signal,
+              });
+              const data = (await response.json()) as {
+                summaries?: { url: string; summary: string }[];
+                error?: string;
+              };
+              if (!response.ok || !data.summaries)
+                throw new Error(
+                  data.error || 'Could not generate Gemini summaries.',
+                );
+              setSummaries((current) => {
+                const next = {
+                  ...current,
+                  ...Object.fromEntries(
+                    data.summaries!.map((item) => [item.url, item.summary]),
+                  ),
+                };
+                summariesRef.current = next;
+                return next;
+              });
+            }),
+          );
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setSummaryError(cause instanceof Error ? cause.message : 'Could not generate Gemini summaries.');
-      } finally { if (!controller.signal.aborted) setSummariesLoading(false); }
+        if (!controller.signal.aborted)
+          setSummaryError(
+            cause instanceof Error
+              ? cause.message
+              : 'Could not generate Gemini summaries.',
+          );
+      } finally {
+        if (!controller.signal.aborted) setSummariesLoading(false);
+      }
     }
     void generate();
     return () => controller.abort();
@@ -105,82 +201,417 @@ export default function FeedPage() {
 
   async function generateOneSummary(url: string) {
     if (summaryRequests[url] || summaries[url]) return;
-    setSummaryRequests((current) => ({ ...current, [url]: true })); setSummaryError('');
+    setSummaryRequests((current) => ({ ...current, [url]: true }));
+    setSummaryError('');
     try {
-      const response = await fetch('/api/news/summaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: [url] }) });
-      const data = await response.json() as { summaries?: { url: string; summary: string }[]; error?: string };
-      if (!response.ok || !data.summaries?.[0]) throw new Error(data.error || 'Could not generate this Gemini summary.');
+      const response = await fetch('/api/news/summaries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: [url] }),
+      });
+      const data = (await response.json()) as {
+        summaries?: { url: string; summary: string }[];
+        error?: string;
+      };
+      if (!response.ok || !data.summaries?.[0])
+        throw new Error(
+          data.error || 'Could not generate this Gemini summary.',
+        );
       setSummaries((current) => {
         const next = { ...current, [url]: data.summaries![0].summary };
         summariesRef.current = next;
         return next;
       });
-    } catch (cause) { setSummaryError(cause instanceof Error ? cause.message : 'Could not generate this Gemini summary.'); }
-    finally { setSummaryRequests((current) => ({ ...current, [url]: false })); }
+    } catch (cause) {
+      setSummaryError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not generate this Gemini summary.',
+      );
+    } finally {
+      setSummaryRequests((current) => ({ ...current, [url]: false }));
+    }
   }
 
+  const briefRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => briefRequest.current?.abort(), []);
+  function closeBrief() {
+    briefRequest.current?.abort();
+    setShowTranscript(false);
+    setTranscriptLoading(false);
+  }
   async function viewTranscript() {
-    setShowTranscript(true); setTranscriptLoading(true); setTranscriptError(''); setTranscript(null);
+    briefRequest.current?.abort();
+    const controller = new AbortController();
+    briefRequest.current = controller;
+    setShowTranscript(true);
+    setTranscriptLoading(true);
+    setTranscriptError('');
+    setTranscript(null);
     try {
-      const response = await fetch('/api/news/transcript', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: briefingMinutes }) });
-      const data = await response.json() as { text?: string; storiesIncluded?: number; totalAvailable?: number; cached?: boolean; error?: string };
-      if (!response.ok || !data.text || typeof data.storiesIncluded !== 'number' || typeof data.totalAvailable !== 'number') throw new Error(data.error || 'Could not generate your transcript.');
-      setTranscript({ text: data.text, storiesIncluded: data.storiesIncluded, totalAvailable: data.totalAvailable, cached: Boolean(data.cached) });
-    } catch (cause) { setTranscriptError(cause instanceof Error ? cause.message : 'Could not generate your transcript.'); }
-    finally { setTranscriptLoading(false); }
+      const response = await fetch('/api/news/transcript', {
+        signal: controller.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes: briefingMinutes }),
+      });
+      const data = (await response.json()) as Partial<Brief> & {
+        storiesIncluded?: number;
+        totalAvailable?: number;
+        cached?: boolean;
+        error?: string;
+      };
+      if (
+        !response.ok ||
+        !data.text ||
+        !Array.isArray(data.sections) ||
+        !Array.isArray(data.sources) ||
+        typeof data.estimatedMinutes !== 'number' ||
+        typeof data.storiesIncluded !== 'number' ||
+        typeof data.totalAvailable !== 'number'
+      )
+        throw new Error(data.error || 'Could not generate your transcript.');
+      if (controller.signal.aborted) return;
+      setTranscript({
+        sections: data.sections,
+        sources: data.sources,
+        estimatedMinutes: data.estimatedMinutes,
+        text: data.text,
+        storiesIncluded: data.storiesIncluded,
+        totalAvailable: data.totalAvailable,
+        cached: Boolean(data.cached),
+      });
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setTranscriptError(
+        cause instanceof Error
+          ? cause.message
+          : 'Could not generate your transcript.',
+      );
+    } finally {
+      if (!controller.signal.aborted) setTranscriptLoading(false);
+    }
   }
 
-  return <FlowShell>
-    <header className="flow-nav" id="top"><Brand /><span className="nav-note">YOUR WORLD. YOUR WAVELENGTH.</span><Link href="/" className="nav-link"><SlidersHorizontal size={15} />Tune your feed</Link></header>
-    <div className="flow-container"><FlowHero feed />
-      <section className="briefing-builder" aria-labelledby="briefing-title">
-        <div className="briefing-builder-copy"><span className="eyebrow"><Clock3 size={14} />DAILY BRIEFING</span><h2 id="briefing-title">HOW MUCH TIME DO YOU HAVE?</h2><p>Choose a full-length rundown at about 150 spoken words per minute, then preview the transcript. Audio comes next.</p></div>
-        <div className="briefing-actions">
-          <fieldset className="duration-picker"><legend className="sr-only">Briefing length</legend>{([5, 10, 20] as const).map((minutes) => <button key={minutes} type="button" aria-pressed={briefingMinutes === minutes} className={briefingMinutes === minutes ? 'active' : ''} onClick={() => { setBriefingMinutes(minutes); setShowTranscript(false); setTranscript(null); setTranscriptError(''); }}><strong>{minutes}</strong><span>MIN</span></button>)}</fieldset>
-          <Button onClick={() => void viewTranscript()} disabled={!feed?.stories.length || transcriptLoading || (!transcriptReady && summariesLoading)}><FileText className="size-4" aria-hidden="true" />{transcriptLoading ? 'Writing with Gemini…' : !transcriptReady && summariesLoading ? 'Preparing summaries…' : 'View transcript'}</Button>
-        </div>
-      </section>
-      {showTranscript && feed && <section id="briefing-transcript" className="transcript-panel" aria-labelledby="transcript-title">
-        <div className="transcript-heading"><div><span className="eyebrow">GEMINI TRANSCRIPT</span><h2 id="transcript-title">YOUR {briefingMinutes}-MINUTE BRIEF</h2><p>{transcript ? `${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved transcript' : ''}.` : 'Researching and writing your personalized rundown.'}</p></div><Button variant="ghost" size="icon" onClick={() => setShowTranscript(false)} aria-label="Close transcript"><X aria-hidden="true" /></Button></div>
-        {transcriptLoading && <output className="flex items-center gap-3 py-10"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gemini is writing your transcript. Longer briefings can take about a minute.</output>}
-        {transcriptError && <p role="alert" className="py-8 font-medium">{transcriptError}</p>}
-        {transcript && <div className="transcript-copy">{transcript.text.split(/\n{2,}/).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 20)}`}>{paragraph}</p>)}</div>}
-        <p className="transcript-note">Generated by Gemini from your current news summaries. Check the linked publisher articles for complete context. Audio is not connected yet.</p>
-      </section>}
-      <div className="feed-toolbar">
-        <div><h2 className="text-xl font-semibold">For you</h2><p className="mt-1 text-sm text-muted-foreground">{feed ? `${feed.stories.length} stories · Updated ${new Date(feed.fetchedAt).toLocaleString()}${feed.cached ? ' · Saved feed' : ''}` : 'Finding recent stories across your preferences'}</p></div>
-        <Button variant="outline" disabled={busy || savingRating} onClick={() => { setBusy(true); setError(''); setNeedsProfile(false); void load(); }}><RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />{busy ? 'Finding stories' : 'Refresh'}</Button>
-      </div>
-      {error && <div role="alert" className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">{error}{needsProfile && <Link href="/" className="ml-2 font-semibold underline">Go to account & preferences</Link>}</div>}
-      {feed?.warning && <output className="mb-5 block rounded-xl border border-border bg-muted p-4 text-sm">{feed.warning}</output>}
-      {summaryError && <p role="alert" className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">{summaryError}</p>}
-      {busy && !feed && <output className="flex items-center gap-3 py-16 text-muted-foreground"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gathering your headlines. This can take up to 35 seconds.</output>}
-      {feed && <>
-        <div className="feed-categories" aria-label="Filter stories">{categories.map((item) => <Button key={item} variant={category === item ? 'default' : 'outline'} size="sm" aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</Button>)}</div>
-        {!stories.length && <div className="rounded-2xl border border-dashed border-border p-10 text-center"><h3 className="font-semibold">No recent matches yet</h3><p className="mt-2 text-sm text-muted-foreground">Try broader interests or fewer exclusions in your preferences.</p></div>}
-        <div className="story-grid">{stories.map((story, index) => <motion.article layout="position" initial={{ opacity: 1, y: 12 }} animate={{ opacity: 1, y: 0 }} key={story.url} className="story-card">
-          <StoryImage story={story} />
-          <div className="flex items-center justify-between gap-3 text-xs"><span className="story-number">{String(index + 1).padStart(2, '0')}</span><span className="rounded-full bg-secondary px-2.5 py-1 font-medium text-secondary-foreground">{story.category}</span><time dateTime={story.publishedAt} className="text-muted-foreground">{new Date(story.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></div>
-          <h3 className="mb-5 mt-4 text-xl font-semibold leading-snug tracking-tight"><a href={story.url} target="_blank" rel="noopener noreferrer" className="hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">{story.title}<ArrowUpRight className="ml-1 inline size-4" aria-label="Opens in a new tab" /></a></h3>
-          <div className="story-summary"><span>GEMINI DEEP SUMMARY</span>{summaries[story.url] ? <p>{summaries[story.url]}</p> : summaryRequests[story.url] || (summariesLoading && feed.stories.slice(0, 8).some((item) => item.url === story.url)) ? <p className="flex items-center gap-2"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />Researching this story…</p> : <Button type="button" size="sm" variant="outline" onClick={() => void generateOneSummary(story.url)}>Generate summary</Button>}</div>
-          <div className="mt-auto"><p className="text-sm font-medium">{story.source}</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Why this story: {story.reasons.slice(0, 3).join(' · ')}</p></div>
-          <fieldset className="story-rating" aria-label={`Rate ${story.title}`} disabled={busy || savingRating}>
-            <legend className="sr-only">Your rating</legend>
-            <span className="rating-label">Your take</span>
-            <div className="rating-stars">
-              {([1, 2, 3, 4, 5] as const).map((value) => {
-                const selected = feed.ratings?.find((item) => item.url === story.url)?.rating || 0;
-                return <button key={value} type="button" className="rating-star" aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
-                  aria-pressed={selected === value} onClick={() => void rate(story.url, value)}>
-                  <Star size={21} fill={value <= selected ? 'currentColor' : 'none'} aria-hidden="true" />
-                </button>;
-              })}
+  return (
+    <FlowShell>
+      <header className="flow-nav" id="top">
+        <Brand />
+        <span className="nav-note">YOUR WORLD. YOUR WAVELENGTH.</span>
+        <Link href="/" className="nav-link">
+          <SlidersHorizontal size={15} />
+          Tune your feed
+        </Link>
+      </header>
+      <div className="flow-container">
+        <FlowHero feed />
+        <section className="briefing-builder" aria-labelledby="briefing-title">
+          <div className="briefing-builder-copy">
+            <span className="eyebrow">
+              <Clock3 size={14} />
+              DAILY BRIEFING
+            </span>
+            <h2 id="briefing-title">HOW MUCH TIME DO YOU HAVE?</h2>
+            <p>
+              Pick your pace. Explore the stories, follow the numbers, and go
+              deeper as you scroll. Reading time depends on today&apos;s
+              available reporting.
+            </p>
+          </div>
+          <div className="briefing-actions">
+            <fieldset className="duration-picker">
+              <legend className="sr-only">Briefing length</legend>
+              {([5, 10, 20] as const).map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  aria-pressed={briefingMinutes === minutes}
+                  className={briefingMinutes === minutes ? 'active' : ''}
+                  onClick={() => {
+                    setBriefingMinutes(minutes);
+                    closeBrief();
+                    setTranscript(null);
+                    setTranscriptError('');
+                  }}
+                >
+                  <strong>{minutes}</strong>
+                  <span>MIN</span>
+                </button>
+              ))}
+            </fieldset>
+            <Button
+              onClick={() => void viewTranscript()}
+              disabled={
+                !feed?.stories.length ||
+                transcriptLoading ||
+                (!transcriptReady && summariesLoading)
+              }
+            >
+              <FileText className="size-4" aria-hidden="true" />
+              {transcriptLoading
+                ? 'Building your brief...'
+                : !transcriptReady && summariesLoading
+                  ? 'Preparing summaries…'
+                  : 'Open brief'}
+            </Button>
+          </div>
+        </section>
+        {showTranscript && feed && (
+          <section
+            id="briefing-transcript"
+            className="transcript-panel interactive-panel"
+            aria-labelledby="transcript-title"
+          >
+            <div className="transcript-heading">
+              <div>
+                <span className="eyebrow">YOUR DAILY READ</span>
+                <h2 id="transcript-title">
+                  YOUR {briefingMinutes}-MINUTE BRIEF
+                </h2>
+                <p>
+                  {transcript
+                    ? `${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved brief' : ''}.`
+                    : 'Researching and writing your personalized rundown.'}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closeBrief}
+                aria-label="Close brief"
+              >
+                <X aria-hidden="true" />
+              </Button>
             </div>
-            {feed.ratings?.some((item) => item.url === story.url) && <button type="button" className="rating-clear" onClick={() => void rate(story.url)} aria-label={`Clear rating for ${story.title}`}>Clear</button>}
-          </fieldset>
-        </motion.article>)}</div>
-        <p className="mt-7 text-xs leading-5 text-muted-foreground">Headlines via Google News RSS · English-language edition · New headlines arrive as you read and rate. Exclusions match headline text, not the full article. Search matches may be imperfect.</p>
-      </>}
-    </div>
-  </FlowShell>;
+            {transcriptLoading && (
+              <output className="flex items-center gap-3 py-10">
+                <LoaderCircle
+                  className="size-5 animate-spin"
+                  aria-hidden="true"
+                />
+                Putting your brief together. Longer briefings may take a few
+                minutes.
+              </output>
+            )}
+            {transcriptError && (
+              <p role="alert" className="py-8 font-medium">
+                {transcriptError}
+              </p>
+            )}
+            {transcript && <InteractiveBrief brief={transcript} />}
+            <p className="transcript-note">
+              Based on your current news summaries. Open the linked publisher
+              articles for full context.
+            </p>
+          </section>
+        )}
+        <div className="feed-toolbar">
+          <div>
+            <h2 className="text-xl font-semibold">For you</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {feed
+                ? `${feed.stories.length} stories · Updated ${new Date(feed.fetchedAt).toLocaleString()}${feed.cached ? ' · Saved feed' : ''}`
+                : 'Finding recent stories across your preferences'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={busy || savingRating}
+            onClick={() => {
+              setBusy(true);
+              setError('');
+              setNeedsProfile(false);
+              void load();
+            }}
+          >
+            <RefreshCw
+              className={`size-4 ${busy ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            {busy ? 'Finding stories' : 'Refresh'}
+          </Button>
+        </div>
+        {error && (
+          <div
+            role="alert"
+            className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"
+          >
+            {error}
+            {needsProfile && (
+              <Link href="/" className="ml-2 font-semibold underline">
+                Go to account & preferences
+              </Link>
+            )}
+          </div>
+        )}
+        {feed?.warning && (
+          <output className="mb-5 block rounded-xl border border-border bg-muted p-4 text-sm">
+            {feed.warning}
+          </output>
+        )}
+        {summaryError && (
+          <p
+            role="alert"
+            className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"
+          >
+            {summaryError}
+          </p>
+        )}
+        {busy && !feed && (
+          <output className="flex items-center gap-3 py-16 text-muted-foreground">
+            <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
+            Gathering your headlines. This can take up to 35 seconds.
+          </output>
+        )}
+        {feed && (
+          <>
+            <div className="feed-categories" aria-label="Filter stories">
+              {categories.map((item) => (
+                <Button
+                  key={item}
+                  variant={category === item ? 'default' : 'outline'}
+                  size="sm"
+                  aria-pressed={category === item}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </Button>
+              ))}
+            </div>
+            {!stories.length && (
+              <div className="rounded-2xl border border-dashed border-border p-10 text-center">
+                <h3 className="font-semibold">No recent matches yet</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Try broader interests or fewer exclusions in your preferences.
+                </p>
+              </div>
+            )}
+            <div className="story-grid">
+              {stories.map((story, index) => (
+                <motion.article
+                  layout="position"
+                  initial={{ opacity: 1, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={story.url}
+                  className="story-card"
+                >
+                  <StoryImage story={story} />
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="story-number">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="rounded-full bg-secondary px-2.5 py-1 font-medium text-secondary-foreground">
+                      {story.category}
+                    </span>
+                    <time
+                      dateTime={story.publishedAt}
+                      className="text-muted-foreground"
+                    >
+                      {new Date(story.publishedAt).toLocaleDateString(
+                        undefined,
+                        { month: 'short', day: 'numeric' },
+                      )}
+                    </time>
+                  </div>
+                  <h3 className="mb-5 mt-4 text-xl font-semibold leading-snug tracking-tight">
+                    <a
+                      href={story.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-primary focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                      {story.title}
+                      <ArrowUpRight
+                        className="ml-1 inline size-4"
+                        aria-label="Opens in a new tab"
+                      />
+                    </a>
+                  </h3>
+                  <div className="story-summary">
+                    <span>GEMINI DEEP SUMMARY</span>
+                    {summaries[story.url] ? (
+                      <p>{summaries[story.url]}</p>
+                    ) : summaryRequests[story.url] ||
+                      (summariesLoading &&
+                        feed.stories
+                          .slice(0, 8)
+                          .some((item) => item.url === story.url)) ? (
+                      <p className="flex items-center gap-2">
+                        <LoaderCircle
+                          className="size-3.5 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Researching this story…
+                      </p>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void generateOneSummary(story.url)}
+                      >
+                        Generate summary
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-auto">
+                    <p className="text-sm font-medium">{story.source}</p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      Why this story: {story.reasons.slice(0, 3).join(' · ')}
+                    </p>
+                  </div>
+                  <fieldset
+                    className="story-rating"
+                    aria-label={`Rate ${story.title}`}
+                    disabled={busy || savingRating}
+                  >
+                    <legend className="sr-only">Your rating</legend>
+                    <span className="rating-label">Your take</span>
+                    <div className="rating-stars">
+                      {([1, 2, 3, 4, 5] as const).map((value) => {
+                        const selected =
+                          feed.ratings?.find((item) => item.url === story.url)
+                            ?.rating || 0;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            className="rating-star"
+                            aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
+                            aria-pressed={selected === value}
+                            onClick={() => void rate(story.url, value)}
+                          >
+                            <Star
+                              size={21}
+                              fill={value <= selected ? 'currentColor' : 'none'}
+                              aria-hidden="true"
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {feed.ratings?.some((item) => item.url === story.url) && (
+                      <button
+                        type="button"
+                        className="rating-clear"
+                        onClick={() => void rate(story.url)}
+                        aria-label={`Clear rating for ${story.title}`}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </fieldset>
+                </motion.article>
+              ))}
+            </div>
+            <p className="mt-7 text-xs leading-5 text-muted-foreground">
+              Headlines via Google News RSS · English-language edition · New
+              headlines arrive as you read and rate. Exclusions match headline
+              text, not the full article. Search matches may be imperfect.
+            </p>
+          </>
+        )}
+      </div>
+    </FlowShell>
+  );
 }

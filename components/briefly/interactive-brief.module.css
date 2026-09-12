@@ -1,0 +1,257 @@
+.reader {
+  position: relative;
+  max-width: 960px;
+  margin: auto;
+}
+.progress {
+  position: sticky;
+  top: 0;
+  height: 4px;
+  z-index: 20;
+  background: #f6efd9;
+}
+.progress > div {
+  height: 100%;
+  background: #a77700;
+  transform-origin: left;
+}
+.contents {
+  padding: 28px 0 36px;
+  border-bottom: 1px solid #e7dcc0;
+}
+.kicker {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  display: block;
+}
+.contents > div {
+  display: flex;
+  gap: 10px;
+  overflow: auto;
+  padding: 16px 0 4px;
+}
+.contents a {
+  flex: 0 0 190px;
+  border: 1px solid #e7dcc0;
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.contents a:hover {
+  background: #f6efd9;
+}
+.chapter {
+  padding: 50px 0;
+  scroll-margin-top: 24px;
+  border-bottom: 1px solid #e7dcc0;
+}
+.chapter h3 {
+  font-family: Anton, Impact, sans-serif;
+  font-size: clamp(30px, 5vw, 54px);
+  line-height: 1.12;
+  margin: 15px 0 24px;
+  text-transform: uppercase;
+  max-width: 820px;
+}
+.chapter > p {
+  max-width: 720px;
+  font-size: 18px;
+  line-height: 1.85;
+  margin: 22px 0;
+  overflow-wrap: anywhere;
+}
+.figure {
+  margin: 32px 0;
+  padding: 28px;
+  border: 1px solid #e7dcc0;
+  border-radius: 28px;
+  background: #fffefa;
+  color: #47391b;
+  --foreground: #47391b;
+  --chart-background: #fffefa;
+  --chart-foreground: #47391b;
+  --chart-foreground-muted: #72664e;
+  --chart-label: #72664e;
+  --chart-line-primary: #a77700;
+  --chart-crosshair: #926900;
+  --chart-grid: #e7dcc0;
+  --chart-tooltip-background: #ffffff;
+  --chart-marker-background: #ffffff;
+  --chart-marker-border: #926900;
+}
+.figure h4 {
+  font-size: 24px;
+  line-height: 1.3;
+  margin: 10px 0 16px;
+}
+.plot {
+  min-width: 0;
+  width: 100%;
+  max-width: 650px;
+  margin: auto;
+  min-height: 220px;
+}
+.ring {
+  display: flex;
+  justify-content: center;
+}
+.legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 16px 0;
+}
+.legend button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e7dcc0;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: transparent;
+  color: inherit;
+}
+.legend button[aria-pressed='true'] {
+  background: #f6efd9;
+  border-color: #926900;
+}
+.legend button > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.details {
+  font-size: 14px;
+  line-height: 1.65;
+  margin-top: 20px;
+}
+.details summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-weight: 650;
+}
+.details ul {
+  list-style: none;
+  padding: 0;
+}
+.details li {
+  padding: 12px 0;
+  border-top: 1px solid #e7dcc0;
+}
+.details a {
+  color: inherit;
+  text-underline-offset: 4px;
+}
+.details small {
+  display: block;
+  opacity: 0.8;
+}
+.tableWrap {
+  overflow: auto;
+}
+.tableWrap table {
+  border-collapse: collapse;
+}
+.tableWrap table {
+  width: 100%;
+  min-width: 470px;
+  font-size: 13px;
+}
+.tableWrap caption {
+  text-align: left;
+  padding: 12px 0;
+}
+.tableWrap th,
+.tableWrap td {
+  text-align: left;
+  padding: 12px 10px;
+  border-top: 1px solid #e7dcc0;
+  vertical-align: top;
+}
+.tableWrap q {
+  display: block;
+}
+.chartNote {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 14px 0 0;
+}
+.chartPlaceholder {
+  padding: 70px 20px;
+  background: #faf6e9;
+  border-radius: 24px;
+}
+.ending {
+  padding: 55px 0;
+}
+.ending p {
+  font-family: Anton, Impact, sans-serif;
+  font-size: clamp(36px, 6vw, 64px);
+  line-height: 1.1;
+  margin: 20px 0;
+}
+.ending a {
+  font-size: 14px;
+}
+.reader a:focus-visible,
+.reader button:focus-visible,
+.reader summary:focus-visible {
+  outline: 3px solid #926900;
+  outline-offset: 4px;
+}
+@media (max-width: 600px) {
+  .chapter {
+    padding: 32px 0;
+  }
+  .chapter > p {
+    font-size: 16px;
+    line-height: 1.8;
+  }
+  .figure {
+    padding: 18px 10px;
+    border-radius: 20px;
+    margin: 24px -8px;
+  }
+  .figure h4,
+  .figure figcaption,
+  .figure > .details,
+  .chartNote {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+  .figure h4 {
+    font-size: 20px;
+  }
+  .plot {
+    min-height: 180px;
+  }
+  .contents a {
+    flex-basis: 160px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reader * {
+    scroll-behavior: auto !important;
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+
+.canvas {
+  height: clamp(240px, 32vw, 340px);
+}
+
+.horizontalCanvas {
+  height: 100%;
+}
+
+.kicker,
+.chapter h3,
+.ending p {
+  color: #926900;
+}

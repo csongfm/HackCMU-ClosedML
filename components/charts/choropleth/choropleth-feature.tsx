@@ -23,7 +23,7 @@ export function ChoroplethFeature({ selectedCountry, onSelect, disabled = false 
       const selected=sameCountry(name,selectedCountry);
       return <path key={feature.id ?? name} d={featurePaths[index] || ''} role="button" aria-label={`Select ${name}`} aria-pressed={selected}
         aria-disabled={disabled} tabIndex={!disabled && index===tabIndex ? 0 : -1}
-        fill={selected ? '#fff9df' : hoveredFeatureIndex===index ? '#eac54e' : '#b79227'} stroke="#735400" strokeWidth={selected ? 1.5 : .55} vectorEffect="non-scaling-stroke"
+        fill={selected ? '#a77700' : hoveredFeatureIndex===index ? '#d7ab38' : '#eee3c5'} stroke="#b9a574" strokeWidth={selected ? 1.5 : .55} vectorEffect="non-scaling-stroke"
         style={{cursor:disabled?'default':'pointer',outline:'none'}}
         onMouseEnter={()=>setHoveredFeatureIndex(index)} onMouseLeave={()=>setHoveredFeatureIndex(null)}
         onFocus={()=>{setFocusIndex(index);setHoveredFeatureIndex(index);}} onBlur={()=>setHoveredFeatureIndex(null)}
