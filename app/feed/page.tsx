@@ -530,11 +530,11 @@ export default function FeedPage() {
               <div>
                 <span className="eyebrow">YOUR DAILY READ</span>
                 <h2 id="transcript-title">
-                  YOUR {briefingMinutes}-MINUTE BRIEF
+                  YOUR {transcript ? transcript.estimatedMinutes : briefingMinutes}-MINUTE BRIEF
                 </h2>
                 <p>
                   {transcript
-                    ? `${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved brief' : ''}.`
+                    ? `About ${transcript.estimatedMinutes} minutes at 1x speed (requested ${briefingMinutes}). ${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved brief' : ''}.`
                     : 'Researching and writing your personalized rundown.'}
                 </p>
               </div>
