@@ -353,6 +353,7 @@ export async function generateGeminiInteractiveBrief(
   stories: NewsStory[],
   summaries: Map<string, string>,
   minutes: BriefingMinutes,
+  previousWordCount?: number,
 ): Promise<unknown> {
   const material = stories.map((s, id) => ({
     id,
@@ -377,6 +378,8 @@ export async function generateGeminiInteractiveBrief(
               text: JSON.stringify({
                 minutes,
                 targetWords: transcriptWords[minutes],
+                lengthInstruction: `Write approximately ${minutes * 150} spoken words across all section titles and paragraphs combined. A 10-minute brief needs twice as much narration as a 5-minute brief. Develop the supplied facts with useful explanations and transitions, without inventing facts or repeating them.`,
+                ...(previousWordCount === undefined ? {} : { correction: `The previous attempt contained ${previousWordCount} words and missed the requested length. Rewrite to meet the target word range.` }),
                 material,
               }),
             },
