@@ -12,18 +12,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'ElevenLabs is not configured.' }, { status: 503 });
   }
 
-  const body = (await request.json()) as { text?: string };
+  const body = (await request.json()) as { text?: string; speed?: number };
   const text = body.text?.trim() || '';
   if (!text || text.length > 5000) {
     return NextResponse.json({ error: 'Provide a script section between 1 and 5,000 characters.' }, { status: 400 });
   }
+
+  const speed = Number(body.speed ?? 1);
+  const voiceSettings = Number.isFinite(speed) && speed > 0 ? { stability: 0.35, similarity_boost: 0.75 } : { stability: 0.35, similarity_boost: 0.75 };
 
   const speechResponse = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey },
-      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2' }),
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: voiceSettings,
+      }),
     },
   );
 

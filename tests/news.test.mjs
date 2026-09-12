@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildNewsQueries, mentions, parseNewsRss, curateStories, fetchNews } from '../lib/news.ts';
 import { EMPTY_PROFILE } from '../lib/preferences.ts';
+import { chunkNarrationText, NARRATION_SPEEDS } from '../lib/narration.ts';
 
 test('queries include every stock, team, and custom preference', () => {
   const profile = { ...EMPTY_PROFILE, city: 'Pittsburgh', country: 'India', topics: ['AI', 'Local news'], teams: Array.from({ length: 15 }, (_, i) => `Team ${i}`), tickers: Array.from({ length: 25 }, (_, i) => `STOCK${i}`), people: ['An Author'], companies: ['A University'], locations: ['London'] };
@@ -74,4 +75,12 @@ test('a stalled response-body cancellation cannot hang the feed', async () => {
       new Promise((_, reject) => setTimeout(() => reject(new Error('Feed hung during cancellation.')), 100)),
     ]), /unavailable/);
   } finally { globalThis.fetch = original; }
+});
+
+test('narration text is split into safe, readable audio chunks', () => {
+  const script = 'Sentence one. Sentence two. Sentence three. Sentence four. Sentence five.';
+  const chunks = chunkNarrationText(script, 20);
+  assert.ok(chunks.length >= 2);
+  assert.ok(chunks.every((chunk) => chunk.length <= 20));
+  assert.deepEqual(NARRATION_SPEEDS, [0.75, 1, 1.25, 1.5, 2]);
 });

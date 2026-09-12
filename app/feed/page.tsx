@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, Clock3, FileText, LoaderCircle, RefreshCw, SlidersHorizontal, Star, X } from 'lucide-react';
+import { ArrowUpRight, Clock3, FileText, LoaderCircle, Pause, Play, RefreshCw, SlidersHorizontal, Star, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { FlowShell, Brand, FlowHero } from '@/components/briefly/design';
 import { Button } from '@/components/ui/button';
 import type { LearnedFeed, StarRating } from '@/lib/feed-learning';
 import type { BriefingMinutes } from '@/lib/briefing';
+import { chunkNarrationText, NARRATION_SPEEDS } from '@/lib/narration';
 
 export default function FeedPage() {
   const [feed, setFeed] = useState<LearnedFeed | null>(null);
@@ -27,6 +28,24 @@ export default function FeedPage() {
   const [transcript, setTranscript] = useState<{ text: string; storiesIncluded: number; totalAvailable: number; cached: boolean } | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState('');
+  const [narrationSpeed, setNarrationSpeed] = useState<number>(1);
+  const [narrationLoading, setNarrationLoading] = useState(false);
+  const [narrationError, setNarrationError] = useState('');
+  const [isNarrating, setIsNarrating] = useState(false);
+  const narrationAudioRef = useRef<HTMLAudioElement | null>(null);
+  const narrationQueueRef = useRef<string[]>([]);
+  const narrationIndexRef = useRef(0);
+
+  useEffect(() => {
+    const currentAudio = narrationAudioRef.current;
+    if (currentAudio) currentAudio.playbackRate = narrationSpeed;
+  }, [narrationSpeed]);
+
+  useEffect(() => () => {
+    narrationQueueRef.current.forEach((url) => URL.revokeObjectURL(url));
+    narrationAudioRef.current?.pause();
+  }, []);
+
   async function rate(url: string, rating?: StarRating) {
     if (actionInFlight.current || busy) return;
     actionInFlight.current = true;
@@ -129,6 +148,80 @@ export default function FeedPage() {
     finally { setTranscriptLoading(false); }
   }
 
+  async function playNarration() {
+    if (!transcript?.text) return;
+
+    const currentAudio = narrationAudioRef.current;
+    if (currentAudio && isNarrating) {
+      currentAudio.pause();
+      setIsNarrating(false);
+      return;
+    }
+
+    setNarrationError('');
+    setNarrationLoading(true);
+
+    try {
+      const chunks = chunkNarrationText(transcript.text, 2800);
+      if (!chunks.length) throw new Error('This transcript is empty.');
+
+      for (const oldUrl of narrationQueueRef.current) URL.revokeObjectURL(oldUrl);
+      narrationQueueRef.current = [];
+
+      const generatedUrls: string[] = [];
+      for (const chunk of chunks) {
+        const response = await fetch('/api/voice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: chunk, speed: narrationSpeed }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error || 'Audio generation failed.');
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        generatedUrls.push(objectUrl);
+      }
+
+      narrationQueueRef.current = generatedUrls;
+      narrationIndexRef.current = 0;
+      const startQueue = (index: number) => {
+        const currentUrl = narrationQueueRef.current[index];
+        if (!currentUrl) {
+          setIsNarrating(false);
+          return;
+        }
+
+        const audio = new Audio(currentUrl);
+        narrationAudioRef.current = audio;
+        audio.playbackRate = narrationSpeed;
+        audio.onended = () => {
+          const nextIndex = index + 1;
+          if (nextIndex < narrationQueueRef.current.length) {
+            narrationIndexRef.current = nextIndex;
+            startQueue(nextIndex);
+            return;
+          }
+          narrationIndexRef.current = 0;
+          setIsNarrating(false);
+        };
+        audio.onerror = () => {
+          setNarrationError('The narration could not be played in this browser.');
+          setIsNarrating(false);
+        };
+        void audio.play();
+        setIsNarrating(true);
+      };
+      startQueue(0);
+    } catch (cause) {
+      setNarrationError(cause instanceof Error ? cause.message : 'The narration could not be played.');
+      setIsNarrating(false);
+    } finally {
+      setNarrationLoading(false);
+    }
+  }
+
   return <FlowShell>
     <header className="flow-nav" id="top"><Brand /><span className="nav-note">YOUR WORLD. YOUR WAVELENGTH.</span><Link href="/" className="nav-link"><SlidersHorizontal size={15} />Tune your feed</Link></header>
     <div className="flow-container"><FlowHero feed />
@@ -143,8 +236,26 @@ export default function FeedPage() {
         <div className="transcript-heading"><div><span className="eyebrow">GEMINI TRANSCRIPT</span><h2 id="transcript-title">YOUR {briefingMinutes}-MINUTE BRIEF</h2><p>{transcript ? `${transcript.storiesIncluded} of ${transcript.totalAvailable} stories selected from your ranked feed${transcript.cached ? ' · saved transcript' : ''}.` : 'Researching and writing your personalized rundown.'}</p></div><Button variant="ghost" size="icon" onClick={() => setShowTranscript(false)} aria-label="Close transcript"><X aria-hidden="true" /></Button></div>
         {transcriptLoading && <output className="flex items-center gap-3 py-10"><LoaderCircle className="size-5 animate-spin" aria-hidden="true" />Gemini is writing your transcript. Longer briefings can take about a minute.</output>}
         {transcriptError && <p role="alert" className="py-8 font-medium">{transcriptError}</p>}
+        {narrationError && <p role="alert" className="py-3 font-medium text-amber-600">{narrationError}</p>}
+        {transcript && <div className="flex flex-col gap-4 border-b border-border pb-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Button type="button" variant={isNarrating ? 'secondary' : 'default'} onClick={() => void playNarration()} disabled={narrationLoading || !transcript.text}>
+                {narrationLoading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : isNarrating ? <Pause className="size-4" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}
+                {narrationLoading ? 'Generating audio…' : isNarrating ? 'Pause narration' : 'Listen to transcript'}
+              </Button>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              Speed
+              <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={narrationSpeed} onChange={(event) => setNarrationSpeed(Number(event.target.value))} aria-label="Playback speed">
+                {NARRATION_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}x</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Audio playback speed adapts to your time goal.</p>
+        </div>}
         {transcript && <div className="transcript-copy">{transcript.text.split(/\n{2,}/).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 20)}`}>{paragraph}</p>)}</div>}
-        <p className="transcript-note">Generated by Gemini from your current news summaries. Check the linked publisher articles for complete context. Audio is not connected yet.</p>
+        <p className="transcript-note">Generated by Gemini from your current news summaries. Check the linked publisher articles for complete context. Transcript audio is generated on demand.</p>
       </section>}
       <div className="feed-toolbar">
         <div><h2 className="text-xl font-semibold">For you</h2><p className="mt-1 text-sm text-muted-foreground">{feed ? `${feed.stories.length} stories · Updated ${new Date(feed.fetchedAt).toLocaleString()}${feed.cached ? ' · Saved feed' : ''}` : 'Finding recent stories across your preferences'}</p></div>
