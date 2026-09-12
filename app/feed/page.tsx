@@ -61,19 +61,44 @@ export default function FeedPage() {
   const narrationAudioRef = useRef<HTMLAudioElement | null>(null);
   const narrationQueueRef = useRef<string[]>([]);
   const narrationIndexRef = useRef(0);
+  const narrationRequestRef = useRef<AbortController | null>(null);
+  const narrationSpeedRef = useRef(narrationSpeed);
+  const [narrationReady, setNarrationReady] = useState(false);
 
   useEffect(() => {
+    narrationSpeedRef.current = narrationSpeed;
     const currentAudio = narrationAudioRef.current;
     if (currentAudio) currentAudio.playbackRate = narrationSpeed;
   }, [narrationSpeed]);
 
   useEffect(
     () => () => {
+      narrationRequestRef.current?.abort();
+      if (narrationAudioRef.current) narrationAudioRef.current.onended = null;
       narrationQueueRef.current.forEach((url) => URL.revokeObjectURL(url));
       narrationAudioRef.current?.pause();
     },
     [],
   );
+
+  function stopNarration() {
+    narrationRequestRef.current?.abort();
+    narrationRequestRef.current = null;
+    narrationAudioRef.current?.pause();
+    setIsNarrating(false);
+    setNarrationLoading(false);
+  }
+
+  function resetNarration() {
+    stopNarration();
+    if (narrationAudioRef.current) narrationAudioRef.current.onended = null;
+    narrationAudioRef.current = null;
+    narrationQueueRef.current.forEach((url) => URL.revokeObjectURL(url));
+    narrationQueueRef.current = [];
+    narrationIndexRef.current = 0;
+    setNarrationReady(false);
+    setNarrationError('');
+  }
 
   async function rate(url: string, rating?: StarRating) {
     if (actionInFlight.current || busy) return;
@@ -260,11 +285,13 @@ export default function FeedPage() {
   const briefRequest = useRef<AbortController | null>(null);
   useEffect(() => () => briefRequest.current?.abort(), []);
   function closeBrief() {
+    stopNarration();
     briefRequest.current?.abort();
     setShowTranscript(false);
     setTranscriptLoading(false);
   }
   async function viewTranscript() {
+    resetNarration();
     briefRequest.current?.abort();
     const controller = new AbortController();
     briefRequest.current = controller;
@@ -318,7 +345,7 @@ export default function FeedPage() {
   }
 
   async function playNarration() {
-    if (!transcript?.text) return;
+    if (!transcript?.text || narrationRequestRef.current) return;
 
     const currentAudio = narrationAudioRef.current;
     if (currentAudio && isNarrating) {
@@ -327,8 +354,22 @@ export default function FeedPage() {
       return;
     }
 
+    if (currentAudio) {
+      setNarrationError('');
+      try {
+        await currentAudio.play();
+        setIsNarrating(!currentAudio.paused);
+      } catch {
+        setNarrationError('Playback could not start. Press Play to try again.');
+      }
+      return;
+    }
+
     setNarrationError('');
     setNarrationLoading(true);
+    const controller = new AbortController();
+    narrationRequestRef.current = controller;
+    const generatedUrls: string[] = [];
 
     try {
       const chunks = chunkNarrationText(transcript.text, 2800);
@@ -338,12 +379,12 @@ export default function FeedPage() {
         URL.revokeObjectURL(oldUrl);
       narrationQueueRef.current = [];
 
-      const generatedUrls: string[] = [];
       for (const chunk of chunks) {
         const response = await fetch('/api/voice', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: chunk, speed: narrationSpeed }),
+          signal: controller.signal,
         });
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
@@ -352,13 +393,15 @@ export default function FeedPage() {
           );
         }
         const blob = await response.blob();
+        controller.signal.throwIfAborted();
         const objectUrl = URL.createObjectURL(blob);
         generatedUrls.push(objectUrl);
       }
 
       narrationQueueRef.current = generatedUrls;
+      setNarrationReady(true);
       narrationIndexRef.current = 0;
-      const startQueue = (index: number) => {
+      const startQueue = (index: number, shouldPlay = true) => {
         const currentUrl = narrationQueueRef.current[index];
         if (!currentUrl) {
           setIsNarrating(false);
@@ -367,7 +410,8 @@ export default function FeedPage() {
 
         const audio = new Audio(currentUrl);
         narrationAudioRef.current = audio;
-        audio.playbackRate = narrationSpeed;
+        audio.autoplay = false;
+        audio.playbackRate = narrationSpeedRef.current;
         audio.onended = () => {
           const nextIndex = index + 1;
           if (nextIndex < narrationQueueRef.current.length) {
@@ -376,6 +420,8 @@ export default function FeedPage() {
             return;
           }
           narrationIndexRef.current = 0;
+          // Replay uses the existing audio queue, without another API call.
+          startQueue(0, false);
           setIsNarrating(false);
         };
         audio.onerror = () => {
@@ -384,11 +430,18 @@ export default function FeedPage() {
           );
           setIsNarrating(false);
         };
-        void audio.play();
-        setIsNarrating(true);
+        if (shouldPlay) {
+          void audio.play().then(() => setIsNarrating(!audio.paused)).catch(() => {
+            setIsNarrating(false);
+            setNarrationError('Playback could not start. Press Play to try again.');
+          });
+        }
       };
-      startQueue(0);
+      // Generation prepares audio only. Playback always needs a Play click.
+      startQueue(0, false);
     } catch (cause) {
+      generatedUrls.forEach((url) => URL.revokeObjectURL(url));
+      if (controller.signal.aborted) return;
       setNarrationError(
         cause instanceof Error
           ? cause.message
@@ -396,7 +449,10 @@ export default function FeedPage() {
       );
       setIsNarrating(false);
     } finally {
-      setNarrationLoading(false);
+      if (narrationRequestRef.current === controller) {
+        narrationRequestRef.current = null;
+        setNarrationLoading(false);
+      }
     }
   }
 
@@ -437,6 +493,7 @@ export default function FeedPage() {
                   onClick={() => {
                     setBriefingMinutes(minutes);
                     closeBrief();
+                    resetNarration();
                     setTranscript(null);
                     setTranscriptError('');
                   }}
@@ -534,7 +591,7 @@ export default function FeedPage() {
                         ? 'Generating audio…'
                         : isNarrating
                           ? 'Pause narration'
-                          : 'Listen to transcript'}
+                          : narrationReady ? 'Play / resume narration' : 'Prepare narration'}
                     </Button>
                   </div>
                   <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
