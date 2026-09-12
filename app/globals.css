@@ -74,7 +74,6 @@
 .flow-container,.flow-nav,.flow-footer { width: min(1320px,calc(100% - 96px)); margin-inline: auto; }
 .flow-nav { display:flex; align-items:center; justify-content:space-between; gap:24px; height:110px; border-bottom:1px solid #ffffff45; }
 .wordmark { font-family: Anton,Impact,sans-serif; font-size:40px; letter-spacing:-1.8px; line-height:1; text-decoration:none; }
-.wordmark span { font-family:Arial,sans-serif; font-size:12px; vertical-align:top; margin-left:4px; letter-spacing:0; }
 .nav-note,.eyebrow,.section-rule,.preview-topline,.flow-footer>span:not(.wordmark) { font-size:10px; font-weight:700; letter-spacing:2px; line-height:1.6; }
 .nav-link { display:flex; align-items:center; gap:18px; font-size:12px; font-weight:700; padding:12px 0; text-transform:uppercase; letter-spacing:1px; }
 .flow-hero { position:relative; padding:66px 0 52px; }
