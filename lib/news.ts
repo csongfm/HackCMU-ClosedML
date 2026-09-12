@@ -124,7 +124,11 @@ export async function fetchNews(profile: ListenerProfile, learnedKeywords: strin
             xml += decoder.decode(value, { stream: true });
           }
           xml += decoder.decode();
-        } finally { await reader.cancel(); }
+        } finally {
+          // Some network implementations never settle cancel() after an abort.
+          // Cleanup is best-effort so it cannot hold the entire feed open forever.
+          void reader.cancel().catch(() => {});
+        }
         stories.push(...parseNewsRss(xml, query));
       } catch { failed++; }
     }

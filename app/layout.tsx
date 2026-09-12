@@ -14,7 +14,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      {/* Grammarly injects body attributes before hydration; keep suppression scoped here. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
