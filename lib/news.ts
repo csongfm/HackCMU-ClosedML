@@ -4,7 +4,7 @@ import type { ListenerProfile } from './preferences';
 
 export type NewsCategory = 'Interests' | 'Sports' | 'Markets' | 'Places' | 'Following';
 export type NewsQuery = { category: NewsCategory; terms: string[]; query: string };
-export type NewsStory = { title: string; url: string; source: string; publishedAt: string; category: NewsCategory; reasons: string[] };
+export type NewsStory = { title: string; url: string; source: string; publishedAt: string; category: NewsCategory; reasons: string[]; coverageSources?: number };
 export type NewsFeed = { stories: NewsStory[]; fetchedAt: string; cached: boolean; warning?: string };
 
 const stockNames: Record<string, string> = { AAPL: 'Apple', NVDA: 'Nvidia', MSFT: 'Microsoft', AMZN: 'Amazon', TSLA: 'Tesla', GOOGL: 'Google', GOOG: 'Google', META: 'Meta', 'BRK.B': 'Berkshire Hathaway' };
@@ -12,7 +12,7 @@ const quote = (value: string) => `"${value.replace(/[^\p{L}\p{N}\s.,&-]/gu, ' ')
 
 // Every saved selection participates, including watchlists larger than three.
 // Batch OR searches to bound requests while leaving room for each category.
-export function buildNewsQueries(profile: ListenerProfile): NewsQuery[] {
+export function buildNewsQueries(profile: ListenerProfile, learnedKeywords: string[] = []): NewsQuery[] {
   const groups: [NewsCategory, string[]][] = [
     ['Places', [profile.city, profile.country, ...profile.locations].filter(Boolean)],
     ['Sports', profile.teams],
@@ -20,7 +20,7 @@ export function buildNewsQueries(profile: ListenerProfile): NewsQuery[] {
     ['Following', [...profile.companies, ...profile.people]],
     ['Interests', profile.topics.map((topic) => topic === 'Local news' ? profile.city : topic)],
   ];
-  return groups.flatMap(([category, values]) => {
+  const queries = groups.flatMap(([category, values]) => {
     const terms = [...new Set(values)];
     const queries: NewsQuery[] = [];
     for (let i = 0; i < terms.length; i += 5) {
@@ -29,6 +29,11 @@ export function buildNewsQueries(profile: ListenerProfile): NewsQuery[] {
     }
     return queries;
   });
+  // Add bounded discovery searches; saved interests/exclusions remain in force.
+  for (const term of [...new Set(learnedKeywords)].slice(0, 3)) {
+    if (/^[\p{L}\p{N}]{2,40}$/u.test(term)) queries.push({ category: 'Interests', terms: [term], query: `${quote(term)} when:3d` });
+  }
+  return queries;
 }
 
 function plain(value: unknown): string {
@@ -67,7 +72,7 @@ export function parseNewsRss(xml: string, query: NewsQuery): NewsStory[] {
   });
 }
 
-export function curateStories(stories: NewsStory[], excludedTopics: string[], now = Date.now()): NewsStory[] {
+export function curateStories(stories: NewsStory[], excludedTopics: string[], now = Date.now(), limit = 40): NewsStory[] {
   const seenUrls = new Set<string>();
   const seenTitles = new Set<string>();
   const groups = new Map<NewsCategory, NewsStory[]>();
@@ -81,19 +86,19 @@ export function curateStories(stories: NewsStory[], excludedTopics: string[], no
   }
   // Round-robin prevents one broad interest from taking over the feed.
   const result: NewsStory[] = [];
-  while (result.length < 40) {
+  while (result.length < limit) {
     let added = false;
     for (const group of groups.values()) {
       const story = group.shift();
-      if (story && result.length < 40) { result.push(story); added = true; }
+      if (story && result.length < limit) { result.push(story); added = true; }
     }
     if (!added) break;
   }
   return result;
 }
 
-export async function fetchNews(profile: ListenerProfile): Promise<NewsFeed> {
-  const queries = buildNewsQueries(profile);
+export async function fetchNews(profile: ListenerProfile, learnedKeywords: string[] = []): Promise<NewsFeed> {
+  const queries = buildNewsQueries(profile, learnedKeywords);
   const stories: NewsStory[] = [];
   let failed = 0;
   let cursor = 0;
@@ -125,6 +130,6 @@ export async function fetchNews(profile: ListenerProfile): Promise<NewsFeed> {
     }
   }));
   if (failed === queries.length) throw new Error('News sources are unavailable right now. Please try again shortly.');
-  return { stories: curateStories(stories, profile.excludedTopics), fetchedAt: new Date().toISOString(), cached: false,
+  return { stories: curateStories(stories, profile.excludedTopics, Date.now(), 160), fetchedAt: new Date().toISOString(), cached: false,
     ...(failed ? { warning: 'Some searches were unavailable. This feed may not cover all your preferences yet.' } : {}) };
 }

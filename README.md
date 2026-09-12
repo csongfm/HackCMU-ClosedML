@@ -35,13 +35,22 @@ Save your preferences to open `/feed`, or use **My feed** from onboarding. No ex
 
 Run `npm.cmd test` for preference and news-pipeline tests, and `npm.cmd run build` to verify production compilation.
 
-## Teach my feed
+## Quiet five-star personalization
 
-Each headline has **More like this**, **Less like this**, and **Undo** controls. Feedback is saved to the signed-in account and the current feed is reranked in the response, without waiting for the RSS cache to expire. **Reset learning** clears the learned history while preserving the saved profile.
+Stories have accessible one-to-five-star controls and a Clear action. Ratings save without moving the current cards or showing model progress. After **five distinct stories rated since the last successful fetch**, the client automatically requests fresh news, bypassing the normal 15-minute cache. A failed fetch keeps the existing feed and pending ratings for a retry. Change the batch size with REFRESH_AFTER_RATINGS in lib/feed-learning.ts.
 
-The server trains a per-user logistic regression model with stochastic gradient descent on normalized headline-word, category, and publisher features. The latest 200 distinct rated stories are stored in one `feedLearning` MongoDB document per account. Changing a vote replaces that story's training example; Undo removes it. The model is refit from the bounded history, so removed votes leave no residual weights. Atomic updates preserve votes from concurrent tabs. Only stories in the account's current cached feed can be rated; feature data is built server-side.
+Each account keeps its latest 200 distinct ratings in MongoDB. Atomic replacements preserve concurrent votes. Old likes/dislikes become five/one stars. Only stories in that user's cached feed can be rated; the server builds feature snapshots from the retrieval corpus, never trusting client features. Clearing a rating removes its influence on the next ranked refresh.
 
-Learned relevance is blended with a small prior from the original freshness/category ordering. Feedback affects both the current feed and future fetched feeds; retrieval still uses the saved interests and exclusions. This model learns keyword similarity, not full-article semantics, and does not guarantee that each vote changes the visible order. It needs no new API key or ML service. `npm test` includes held-out-headline ranking, negative-feedback, reset, and deterministic-retraining checks.
+The model uses **linear pairwise logistic regression**, following the probabilistic preference approach described in [Microsoft's learning-to-rank overview](https://www.microsoft.com/en-us/research/publication/from-ranknet-to-lambdarank-to-lambdamart-an-overview/). For each unequal-rated pair, its target is 1 if A's stars exceed B's, otherwise 0; equal stars are skipped. The model predicts sigmoid(w dot (featuresA - featuresB)). Rating gaps weight the loss, so 5 vs 1 carries more weight than 4 vs 3. Full-batch gradient descent minimizes regularized binary cross entropy across at most 1,200 pairs. This is a linear model, not the neural RankNet architecture, and fitted weights are not a guarantee of optimal recommendations.
+
+Features:
+- **Logarithmic freshness:** 1 / (1 + log(1 + age in hours)), with a strong initial coefficient of 2.5. This drops fastest just after publication; weights can adapt to actual preferences.
+- **Keywords:** stopword-filtered headline terms, normalized TF-IDF identities, and an aggregate keyword-salience score. Category and publisher features add context. Keywords describe headlines, not full article semantics.
+- **Popularity proxy:** log-scaled number of independent publishers with sufficiently similar headlines in the fetched candidate pool. This measures coverage, not views/shares, and is zero when no additional coverage is observed. It cannot establish global popularity.
+
+Each refreshed retrieval keeps the saved preference searches, adds up to three positively learned keyword searches, applies exclusions and a 72-hour age limit, and collects up to 160 deduplicated candidates. The model selects 40, preferring unrated candidates; it does not generate stories. If publishers return the same stories, a refresh cannot guarantee new headlines. With tied or insufficient ratings, ranking falls back to freshness-first priors. Google News receives search terms, including learned keywords, but no account identity or ratings. No new API key is required.
+
+Tests cover pair labels and gaps, held-out headline preferences, feature-weight learning, logarithmic recency, coverage limits, migration, batch boundaries, validation, and bounded deterministic training.
 
 ## Account setup troubleshooting
 
